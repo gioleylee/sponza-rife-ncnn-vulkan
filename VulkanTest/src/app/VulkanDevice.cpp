@@ -1,6 +1,17 @@
 // Owns Vulkan instance/device setup, swapchain creation, and queue-family selection.
 #include "HelloTriangleApplication.h"
 
+#include <GLFW/glfw3.h>
+#include <vulkan/vulkan.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <iostream>
+#include <limits>
+#include <set>
+#include <stdexcept>
+#include <vector>
+
 void HelloTriangleApplication::createInstance() {
     if (validation::Enabled && !validation::checkLayerSupport()) {
         throw std::runtime_error("validation layers requested, but not available!");

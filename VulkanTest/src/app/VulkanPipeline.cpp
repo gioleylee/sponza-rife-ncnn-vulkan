@@ -1,6 +1,15 @@
 // Owns render pass, descriptor set layouts, shader loading, and graphics pipelines.
 #include "HelloTriangleApplication.h"
 
+#include <vulkan/vulkan.h>
+
+#include <array>
+#include <cstdint>
+#include <fstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 void HelloTriangleApplication::createRenderPass() {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapChainImageFormat;

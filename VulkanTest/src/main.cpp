@@ -6,14 +6,54 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #endif
 
-#include "HelloTriangleApplication.h"
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/fwd.hpp>
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <filesystem>
+#include <future>
+#include <iostream>
+#include <mutex>
+#include <stdexcept>
+#include <string>
+#include <vector>
+#include <ratio>
+
+#if __has_include(<ncnn/net.h>) && __has_include(<ncnn/gpu.h>) && __has_include(<ncnn/layer.h>)
+#include <ncnn/net.h>
+#include <ncnn/gpu.h>
+// #include <ncnn/allocator.h>
+// #include <ncnn/layer.h>
+#endif
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
+#include "AppTypes.h"
+#include "RifeRunner.h"
+#include "validation_layers.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
+#include "HelloTriangleApplication.h"
 
 void HelloTriangleApplication::run() {
     initWindow();
@@ -1373,8 +1413,12 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
 
     const uint32_t prevIndex = previousRifeGpuFrameIndex;
     const uint32_t currIndex = currentRifeGpuFrameIndex;
-    const auto prevGpu = frameCaptureBuffers[prevIndex];
-    const auto currGpu = frameCaptureBuffers[currIndex];
+    const VkBuffer prevBuffer = frameCaptureBuffers[prevIndex].gpuBuffer;
+    const VkDeviceMemory prevMemory = frameCaptureBuffers[prevIndex].gpuMemory;
+    const VkDeviceSize prevSize = frameCaptureBuffers[prevIndex].size;
+    const VkBuffer currBuffer = frameCaptureBuffers[currIndex].gpuBuffer;
+    const VkDeviceMemory currMemory = frameCaptureBuffers[currIndex].gpuMemory;
+    const VkDeviceSize currSize = frameCaptureBuffers[currIndex].size;
     const VkBuffer outBuffer = rifeOutputBuffers[outputIndex].gpuBuffer;
     const VkDeviceMemory outMemory = rifeOutputBuffers[outputIndex].gpuMemory;
     const VkDeviceSize outSize = rifeOutputBuffers[outputIndex].size;
@@ -1400,8 +1444,12 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
     rifeInferenceRequestWaitingForFramePair = false;
 
     asyncRifeInference = std::async(std::launch::async, [this,
-                                                         prevGpu,
-                                                         currGpu,
+                                                         prevBuffer,
+                                                         prevMemory,
+                                                         prevSize,
+                                                         currBuffer,
+                                                         currMemory,
+                                                         currSize,
                                                          outBuffer,
                                                          outMemory,
                                                          outSize,
@@ -1422,12 +1470,12 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         const auto start = std::chrono::high_resolution_clock::now();
         result.processRet = rifeRunner.processGpuRgbaFrames(
-            prevGpu.gpuBuffer,
-            prevGpu.gpuMemory,
-            prevGpu.size,
-            currGpu.gpuBuffer,
-            currGpu.gpuMemory,
-            currGpu.size,
+            prevBuffer,
+            prevMemory,
+            prevSize,
+            currBuffer,
+            currMemory,
+            currSize,
             outBuffer,
             outMemory,
             outSize,

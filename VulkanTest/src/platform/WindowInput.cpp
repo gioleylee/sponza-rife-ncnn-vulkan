@@ -1,6 +1,12 @@
 // Owns window creation, resize callbacks, keyboard input, and mouse-look camera updates.
 #include "WindowInput.h"
 
+#include <GLFW/glfw3.h>
+#include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
+
+#include <cmath>
+
 void HelloTriangleApplication::initWindow() {
     glfwInit();
 

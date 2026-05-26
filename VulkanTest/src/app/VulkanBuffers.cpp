@@ -1,6 +1,12 @@
 // Owns vertex/index/uniform buffers, buffer copies, and memory type lookup.
 #include "HelloTriangleApplication.h"
 
+#include <vulkan/vulkan.h>
+
+#include <cstddef>
+#include <cstring>
+#include <stdexcept>
+
 void HelloTriangleApplication::createVertexBuffer() {
     VkDeviceSize bufferSize = sizeof(modelVertices[0]) * modelVertices.size();
 

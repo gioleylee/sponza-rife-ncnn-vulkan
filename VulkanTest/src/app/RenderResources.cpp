@@ -1,6 +1,11 @@
 // Owns framebuffer, depth, G-buffer attachment, and image-view resources.
 #include "HelloTriangleApplication.h"
 
+#include <vulkan/vulkan.h>
+
+#include <cstdint>
+#include <stdexcept>
+
 void HelloTriangleApplication::createFramebuffers() {
     swapChainFramebuffers.resize(swapChainImageViews.size());
 

@@ -43,6 +43,7 @@
 
 #include "rife.h"
 
+#if !defined(HAS_NCNN)
 #if __has_include(<ncnn/net.h>) && __has_include(<ncnn/gpu.h>) && __has_include(<ncnn/layer.h>)
 #include <ncnn/net.h>
 #include <ncnn/gpu.h>
@@ -52,6 +53,13 @@
 #define HAS_NCNN 1
 #else
 #define HAS_NCNN 0
+#endif
+#elif HAS_NCNN
+#include <ncnn/net.h>
+#include <ncnn/gpu.h>
+#include <ncnn/allocator.h>
+#include <ncnn/layer.h>
+#include "rife_ops.h"
 #endif
 
 #if HAS_NCNN && defined(HAS_WARP_VK_SHADER)

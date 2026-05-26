@@ -118,6 +118,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>C:\projects\libraries\include\glfw-3.4.bin.WIN64\lib-vc2022;$(VULKAN_SDK)\Lib;C:\projects\libraries\ncnn\build\install\lib;C:\projects\libraries\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;ncnnd.lib;glslangd.lib;SPIRV-Toolsd.lib;SPIRV-Tools-optd.lib;assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>MSVCRT;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "C:\Users\giole\OneDrive\Documents\College\Y3S1\Intro to Graphics Programming\Assignment2\assimp-vc143-mt.dll" "$(OutDir)"</Command>
@@ -139,6 +141,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>C:\projects\libraries\include\glfw-3.4.bin.WIN64\lib-vc2022;$(VULKAN_SDK)\Lib;C:\projects\libraries\ncnn\build\install\lib;C:\projects\libraries\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;ncnnd.lib;glslangd.lib;SPIRV-Toolsd.lib;SPIRV-Tools-optd.lib;assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "C:\Users\giole\OneDrive\Documents\College\Y3S1\Intro to Graphics Programming\Assignment2\assimp-vc143-mt.dll" "$(OutDir)"</Command>

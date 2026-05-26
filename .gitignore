@@ -1,0 +1,35 @@
+# Visual Studio
+.vs/
+*.VC.db
+*.VC.opendb
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build folders
+Debug/
+Release/
+x64/
+x86/
+build/
+out/
+
+# Binaries
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+
+# Logs
+*.log
+
+# Build Obj
+**/x64/**/*.obj
+**/Debug/**/*.obj
+**/Release/**/*.obj
+**/out/**/*.obj
+
+# 3D model .obj files
+!**/assets/**/*.obj

@@ -48,18 +48,9 @@
 #include <ncnn/allocator.h>
 #include <ncnn/layer.h>
 #include "rife_src/rife_ops.h"
-#if __has_include(<ncnn/benchmark.h>)
-#include <ncnn/benchmark.h>
-#define HAS_NCNN_BENCHMARK 1
-#else
-#define HAS_NCNN_BENCHMARK 0
-#endif
-#define ENABLE_BENCHNCNN 0
 #define HAS_NCNN 1
 #else
 #define HAS_NCNN 0
-#define HAS_NCNN_BENCHMARK 0
-#define ENABLE_BENCHNCNN 0
 #endif
 
 #if HAS_NCNN && defined(HAS_WARP_VK_SHADER)
@@ -162,10 +153,6 @@ private:
     std::vector<FrameCaptureBuffer> frameCaptureBuffers;
     std::vector<RifeOutputBuffer> rifeOutputBuffers;
     std::array<uint32_t, MAX_FRAMES_IN_FLIGHT> pendingCaptureSlotByFrame = { UINT32_MAX, UINT32_MAX };
-    std::vector<uint8_t> rifeCurrentFrameRGBA;
-    std::vector<uint8_t> rifePreviousFrameRGBA;
-    bool hasCurrentRifeFrame = false;
-    bool hasRifeFramePair = false;
     bool hasRifeGpuFramePair = false;
     uint32_t currentRifeGpuFrameIndex = UINT32_MAX;
     uint32_t previousRifeGpuFrameIndex = UINT32_MAX;
@@ -231,19 +218,12 @@ private:
     RifeRunner rifeRunner;
     ncnn::Net net;
     bool ncnnInitialized = false;
-    bool ncnnInitSetVulkanDeviceCalled = false;
     int ncnnRendererDeviceIndex = -1;
     bool ncnnModelLoaded = false;
     bool rifeModelAttachedToRenderer = false;
-    bool rifeSmokeTestDone = false;
-    bool rifeSmokeTestFailed = false;
     bool rKeyPressed = false;
     bool rifeRealtimeInterpolationEnabled = false;
     bool rifeInferenceRequestWaitingForFramePair = false;
-    std::string rifePreferredOutputBlobName;
-    bool rifePreferredOutputIsRgb = false;
-    std::string ncnnLoadedParamPath;
-    std::string ncnnLoadedBinPath;
 #endif
 
     void initWindow();
@@ -267,17 +247,7 @@ private:
 
     bool loadNcnnModel(const std::string& paramPath, const std::string& binPath);
 
-    bool runNcnnFallbackWorkload();
-
     void tryLoadDefaultNcnnModel();
-
-    bool convertCapturedFrameToBgr(const std::vector<uint8_t>& rgbaFrame, std::vector<uint8_t>& bgrFrame) const;
-
-    bool convertCapturedFrameToRgba(const std::vector<uint8_t>& sourceFrame, std::vector<uint8_t>& rgbaFrame) const;
-
-    bool writeRgbaPng(const std::filesystem::path& outputPath, int width, int height, const std::vector<uint8_t>& rgbaData) const;
-
-    bool runRifeSmokeTestAndSaveImages();
 #endif
 
     void recreateSwapChain();

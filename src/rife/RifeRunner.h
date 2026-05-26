@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <vector>
 
 #if !defined(HAS_NCNN)
 #if __has_include(<ncnn/net.h>) && __has_include(<ncnn/gpu.h>) && __has_include(<ncnn/layer.h>)
@@ -35,13 +34,6 @@ public:
 
     bool isReady() const;
 
-    int processBgrFrames(const std::vector<uint8_t>& prevBgr,
-                         const std::vector<uint8_t>& currBgr,
-                         int width,
-                         int height,
-                         float timestep,
-                         std::vector<uint8_t>& outBgr) const;
-
     int processGpuRgbaFrames(VkBuffer prevBuffer,
                              VkDeviceMemory prevMemory,
                              VkDeviceSize prevSize,
@@ -57,7 +49,6 @@ public:
                              int inferenceHeight,
                              float timestep) const;
 
-    bool warmupInference(int width, int height, int runs = 20) const;
     bool wasVulkanDeviceSet() const;
     void reset();
 

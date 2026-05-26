@@ -173,7 +173,6 @@
     <ClInclude Include="HelloTriangleApplication.h" />
     <ClInclude Include="WindowInput.h" />
     <ClInclude Include="rife_src\rife.h" />
-    <ClInclude Include="rife_src\warp.h" />
     <ClInclude Include="validation_layers.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

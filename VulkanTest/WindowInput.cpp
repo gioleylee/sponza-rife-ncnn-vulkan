@@ -94,8 +94,6 @@ void HelloTriangleApplication::processInput(float deltaTime) {
             rifeRealtimeInterpolationEnabled = !rifeRealtimeInterpolationEnabled;
             waitForAsyncRifeInference();
             rifeInferenceRequestWaitingForFramePair = false;
-            hasCurrentRifeFrame = false;
-            hasRifeFramePair = false;
             hasRifeGpuFramePair = false;
             hasRifeDisplayFrame = false;
             for (auto& output : rifeOutputBuffers) {
@@ -115,8 +113,6 @@ void HelloTriangleApplication::processInput(float deltaTime) {
             lastFrameCaptureProcessMs = 0.0;
             lastFramePairCaptureProcessMs = 0.0;
             pendingCaptureSlotByFrame.fill(UINT32_MAX);
-            rifeCurrentFrameRGBA.clear();
-            rifePreviousFrameRGBA.clear();
             std::cout << "[RIFE] realtime interpolation "
                       << (rifeRealtimeInterpolationEnabled ? "enabled" : "disabled")
                       << std::endl;

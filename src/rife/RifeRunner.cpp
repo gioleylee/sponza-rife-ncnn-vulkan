@@ -106,28 +106,6 @@ bool RifeRunner::isReady() const {
     return rifeEngine && !loadedParamPath.empty() && !loadedBinPath.empty();
 }
 
-int RifeRunner::processBgrFrames(const std::vector<uint8_t>& prevBgr,
-                                 const std::vector<uint8_t>& currBgr,
-                                 int width,
-                                 int height,
-                                 float timestep,
-                                 std::vector<uint8_t>& outBgr) const {
-    if (!isReady()) {
-        return -1;
-    }
-
-    const size_t expectedSize = static_cast<size_t>(width) * static_cast<size_t>(height) * 3;
-    if (prevBgr.size() != expectedSize || currBgr.size() != expectedSize) {
-        return -2;
-    }
-
-    outBgr.assign(expectedSize, 0);
-    ncnn::Mat prev(width, height, const_cast<uint8_t*>(prevBgr.data()), (size_t)3u, 1);
-    ncnn::Mat curr(width, height, const_cast<uint8_t*>(currBgr.data()), (size_t)3u, 1);
-    ncnn::Mat out(width, height, outBgr.data(), (size_t)3u, 1);
-    return rifeEngine->process(prev, curr, timestep, out);
-}
-
 int RifeRunner::processGpuRgbaFrames(VkBuffer prevBuffer,
                                      VkDeviceMemory prevMemory,
                                      VkDeviceSize prevSize,
@@ -178,45 +156,6 @@ int RifeRunner::processGpuRgbaFrames(VkBuffer prevBuffer,
     ncnn::VkMat out(width, height, &outWrapped, (size_t)4u, 1, nullptr);
 
     return rifeEngine->process_v4_gpu(prev, curr, width, height, inferenceWidth, inferenceHeight, timestep, out);
-}
-
-bool RifeRunner::warmupInference(int width, int height, int runs) const {
-    if (!isReady() || width <= 0 || height <= 0 || runs <= 0) {
-        return false;
-    }
-
-    const size_t expectedSize = static_cast<size_t>(width) * static_cast<size_t>(height) * 3;
-    std::vector<uint8_t> prevBgr(expectedSize, 0);
-    std::vector<uint8_t> currBgr(expectedSize, 0);
-    std::vector<uint8_t> outBgr;
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            const size_t idx = (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 3;
-            prevBgr[idx + 0] = static_cast<uint8_t>((x * 3 + y * 5) & 255);
-            prevBgr[idx + 1] = static_cast<uint8_t>((x * 7 + y * 11) & 255);
-            prevBgr[idx + 2] = static_cast<uint8_t>((x * 13 + y * 17) & 255);
-            currBgr[idx + 0] = static_cast<uint8_t>((x * 19 + y * 23 + 31) & 255);
-            currBgr[idx + 1] = static_cast<uint8_t>((x * 29 + y * 37 + 47) & 255);
-            currBgr[idx + 2] = static_cast<uint8_t>((x * 41 + y * 43 + 59) & 255);
-        }
-    }
-
-    for (int i = 0; i < runs; ++i) {
-        const int ret = processBgrFrames(prevBgr, currBgr, width, height, 0.5f, outBgr);
-        if (ret != 0 || outBgr.size() != expectedSize) {
-            std::cerr << "[RIFE] warmup inference failed (code=" << ret << ")" << std::endl;
-            return false;
-        }
-
-        for (size_t j = 0; j < currBgr.size(); ++j) {
-            currBgr[j] = static_cast<uint8_t>(currBgr[j] + 1);
-        }
-    }
-
-    std::cout << "[RIFE] warmup inference completed (runs=" << runs
-              << ", input=" << width << "x" << height << ")" << std::endl;
-    return true;
 }
 
 bool RifeRunner::wasVulkanDeviceSet() const {

@@ -37,8 +37,10 @@ Linker > Input > Additional Dependencies
  - ncnnd.lib
  - glslangd.lib
  - SPIRV-Toolsd.lib
- - SPIRV-Tools-optd.li
+ - SPIRV-Tools-optd.lib
  - assimp-vc143-mt.lib
 
 Build Events > Post-Build Event
  - Copy Assimp DLL to output directory.
+
+RIFE model files are loaded from `VulkanTest/assets/models/rife-v4`.

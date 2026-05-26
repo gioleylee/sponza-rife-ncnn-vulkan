@@ -11,21 +11,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#if __has_include("stb_image_write.h")
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable:4996)
-#endif
-#include "stb_image_write.h"
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif
-#define HAS_STB_IMAGE_WRITE 1
-#else
-#define HAS_STB_IMAGE_WRITE 0
-#endif
-
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -199,13 +184,6 @@ void HelloTriangleApplication::initNcnn() {
     if (gpuCount > 0 && !HAS_RIFE_WARP_VK) {
         std::cout << "[NCNN] rife warp vulkan shaders not found; forcing CPU inference path" << std::endl;
     }
-    ncnnInitSetVulkanDeviceCalled = false;
-    if (net.opt.use_vulkan_compute) {
-        // RifeRunner binds a non-owning ncnn::VulkanDevice wrapper around the renderer VkDevice
-        // when the model is loaded, avoiding a second ncnn-owned VkDevice.
-        ncnnInitSetVulkanDeviceCalled = true;
-    }
-
     ncnnInitialized = true;
 
     std::cout << "[NCNN] initialized (gpu_count=" << gpuCount
@@ -213,7 +191,6 @@ void HelloTriangleApplication::initNcnn() {
               << ", vulkan_compute=" << (net.opt.use_vulkan_compute ? "on" : "off") << ")" << std::endl;
     std::cout << "[RIFE][PATH] startup: gpu_count=" << gpuCount
               << ", net.opt.use_vulkan_compute=" << (net.opt.use_vulkan_compute ? "true" : "false")
-              << ", renderer_vkdevice_deferred=" << (ncnnInitSetVulkanDeviceCalled ? "true" : "false")
               << std::endl;
 }
 
@@ -230,10 +207,6 @@ void HelloTriangleApplication::shutdownNcnn() {
     ncnnRendererDeviceIndex = -1;
     ncnnModelLoaded = false;
     rifeModelAttachedToRenderer = false;
-    rifePreferredOutputBlobName.clear();
-    rifePreferredOutputIsRgb = false;
-    ncnnLoadedParamPath.clear();
-    ncnnLoadedBinPath.clear();
 
     std::cout << "[NCNN] shutdown complete" << std::endl;
 }
@@ -248,12 +221,8 @@ bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const
     }
 
     ncnnModelLoaded = true;
-    rifePreferredOutputBlobName.clear();
-    rifePreferredOutputIsRgb = false;
-    ncnnLoadedParamPath = paramPath;
-    ncnnLoadedBinPath = binPath;
 
-    std::cout << "[NCNN] model loaded: " << ncnnLoadedParamPath << " + " << ncnnLoadedBinPath << std::endl;
+    std::cout << "[NCNN] model loaded: " << paramPath << " + " << binPath << std::endl;
     std::cout << "[RIFE][PATH] startup: model_set_vulkan_device(renderer_vkdevice)_called="
               << (rifeRunner.wasVulkanDeviceSet() ? "true" : "false") << std::endl;
 
@@ -285,117 +254,13 @@ bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const
     return true;
 }
 
-bool HelloTriangleApplication::runNcnnFallbackWorkload() {
-    ncnn::Option opt = net.opt;
-
-    ncnn::Mat input(8);
-    for (int i = 0; i < input.w; ++i) {
-        input[i] = static_cast<float>(i) - 4.0f;
-    }
-
-    ncnn::Layer* relu = ncnn::create_layer("ReLU");
-    if (!relu) {
-        std::cerr << "[NCNN] failed to create fallback ReLU layer" << std::endl;
-        return false;
-    }
-
-    ncnn::ParamDict pd;
-    pd.set(0, 0.1f);
-    if (relu->load_param(pd) != 0) {
-        std::cerr << "[NCNN] failed to load fallback ReLU params" << std::endl;
-        delete relu;
-        return false;
-    }
-
-    if (relu->create_pipeline(opt) != 0) {
-        std::cerr << "[NCNN] failed to create fallback ReLU pipeline" << std::endl;
-        delete relu;
-        return false;
-    }
-
-    const auto cleanupReLU = [&]() {
-        relu->destroy_pipeline(opt);
-        delete relu;
-    };
-
-    const int ret = relu->forward_inplace(input, opt);
-
-    if (ret != 0) {
-        std::cerr << "[NCNN] fallback workload failed (code=" << ret << ")" << std::endl;
-        cleanupReLU();
-        return false;
-    }
-
-    std::cout << "[NCNN] fallback workload ran: [" << input[0] << ", " << input[1] << ", ...]" << std::endl;
-
-#if HAS_NCNN_BENCHMARK && ENABLE_BENCHNCNN
-    constexpr int warmupRuns = 10;
-    constexpr int benchmarkRuns = 100;
-
-    for (int i = 0; i < warmupRuns; ++i) {
-        ncnn::Mat warmInput(8);
-        for (int j = 0; j < warmInput.w; ++j) {
-            warmInput[j] = static_cast<float>(j) - 4.0f;
-        }
-        const int warmRet = relu->forward_inplace(warmInput, opt);
-        if (warmRet != 0) {
-            std::cerr << "[NCNN] warmup failed (code=" << warmRet << ")" << std::endl;
-            cleanupReLU();
-            return false;
-        }
-    }
-
-    double totalMs = 0.0;
-    double minMs = std::numeric_limits<double>::max();
-    double maxMs = 0.0;
-
-    for (int i = 0; i < benchmarkRuns; ++i) {
-        ncnn::Mat benchInput(8);
-        for (int j = 0; j < benchInput.w; ++j) {
-            benchInput[j] = static_cast<float>(j) - 4.0f;
-        }
-
-        const double startMs = ncnn::get_current_time();
-        const int benchRet = relu->forward_inplace(benchInput, opt);
-        const double endMs = ncnn::get_current_time();
-
-        if (benchRet != 0) {
-            std::cerr << "[NCNN] benchmark run failed (code=" << benchRet << ")" << std::endl;
-            cleanupReLU();
-            return false;
-        }
-
-        const double elapsedMs = endMs - startMs;
-        totalMs += elapsedMs;
-        minMs = std::min(minMs, elapsedMs);
-        maxMs = std::max(maxMs, elapsedMs);
-    }
-
-    const double avgMs = totalMs / benchmarkRuns;
-    std::cout << "[NCNN][BENCH] fallback ReLU inference stats -> "
-              << "runs=" << benchmarkRuns
-              << ", avg=" << avgMs << " ms"
-              << ", min=" << minMs << " ms"
-              << ", max=" << maxMs << " ms"
-              << std::endl;
-#else
-    std::cout << "[NCNN][BENCH] benchncnn disabled; inference stats skipped." << std::endl;
-#endif
-
-    cleanupReLU();
-
-    return true;
-}
-
 void HelloTriangleApplication::tryLoadDefaultNcnnModel() {
     const std::string defaultParam = "assets/models/rife-v4/flownet.param";
     const std::string defaultBin = "assets/models/rife-v4/flownet.bin";
 
     if (!std::filesystem::exists(defaultParam) || !std::filesystem::exists(defaultBin)) {
-        std::cout << "[NCNN] default model not found. Add model files at "
-                  << defaultParam << " and " << defaultBin
-                  << " or call loadNcnnModel(paramPath, binPath)." << std::endl;
-        runNcnnFallbackWorkload();
+        std::cout << "[NCNN] default RIFE model not found: "
+                  << defaultParam << " and " << defaultBin << std::endl;
         return;
     }
 
@@ -407,858 +272,10 @@ void HelloTriangleApplication::tryLoadDefaultNcnnModel() {
         if (rifeModelAttachedToRenderer) {
             std::cout << "[RIFE] model attached to Vulkan renderer" << std::endl;
         }
-        std::cout << "[NCNN] using loaded RIFE model path (fallback ReLU benchmark skipped)" << std::endl;
     }
     else {
-        std::cout << "[NCNN] failed to load default RIFE model, running fallback workload" << std::endl;
-        runNcnnFallbackWorkload();
+        std::cout << "[NCNN] failed to load default RIFE model" << std::endl;
     }
-}
-
-bool HelloTriangleApplication::convertCapturedFrameToBgr(const std::vector<uint8_t>& rgbaFrame, std::vector<uint8_t>& bgrFrame) const {
-    const size_t expectedSize =
-        static_cast<size_t>(swapChainExtent.width) *
-        static_cast<size_t>(swapChainExtent.height) * 4;
-
-    if (rgbaFrame.size() != expectedSize) {
-        return false;
-    }
-
-    const size_t pixelCount = static_cast<size_t>(swapChainExtent.width) * static_cast<size_t>(swapChainExtent.height);
-    bgrFrame.resize(pixelCount * 3);
-
-    if (swapChainImageFormat == VK_FORMAT_B8G8R8A8_SRGB || swapChainImageFormat == VK_FORMAT_B8G8R8A8_UNORM) {
-        for (size_t i = 0, j = 0; i < pixelCount; ++i, j += 4) {
-            bgrFrame[i * 3 + 0] = rgbaFrame[j + 0];
-            bgrFrame[i * 3 + 1] = rgbaFrame[j + 1];
-            bgrFrame[i * 3 + 2] = rgbaFrame[j + 2];
-        }
-        return true;
-    }
-
-    if (swapChainImageFormat == VK_FORMAT_R8G8B8A8_SRGB || swapChainImageFormat == VK_FORMAT_R8G8B8A8_UNORM) {
-        for (size_t i = 0, j = 0; i < pixelCount; ++i, j += 4) {
-            bgrFrame[i * 3 + 0] = rgbaFrame[j + 2];
-            bgrFrame[i * 3 + 1] = rgbaFrame[j + 1];
-            bgrFrame[i * 3 + 2] = rgbaFrame[j + 0];
-        }
-        return true;
-    }
-
-    return false;
-}
-
-bool HelloTriangleApplication::convertCapturedFrameToRgba(const std::vector<uint8_t>& sourceFrame, std::vector<uint8_t>& rgbaFrame) const {
-    const size_t expectedSize =
-        static_cast<size_t>(swapChainExtent.width) *
-        static_cast<size_t>(swapChainExtent.height) * 4;
-
-    if (sourceFrame.size() != expectedSize) {
-        return false;
-    }
-
-    rgbaFrame.resize(expectedSize);
-
-    if (swapChainImageFormat == VK_FORMAT_R8G8B8A8_SRGB || swapChainImageFormat == VK_FORMAT_R8G8B8A8_UNORM) {
-        memcpy(rgbaFrame.data(), sourceFrame.data(), expectedSize);
-        return true;
-    }
-
-    if (swapChainImageFormat == VK_FORMAT_B8G8R8A8_SRGB || swapChainImageFormat == VK_FORMAT_B8G8R8A8_UNORM) {
-        const size_t pixelCount = static_cast<size_t>(swapChainExtent.width) * static_cast<size_t>(swapChainExtent.height);
-        for (size_t i = 0, j = 0; i < pixelCount; ++i, j += 4) {
-            rgbaFrame[j + 0] = sourceFrame[j + 2];
-            rgbaFrame[j + 1] = sourceFrame[j + 1];
-            rgbaFrame[j + 2] = sourceFrame[j + 0];
-            rgbaFrame[j + 3] = sourceFrame[j + 3];
-        }
-        return true;
-    }
-
-    return false;
-}
-
-bool HelloTriangleApplication::writeRgbaPng(const std::filesystem::path& outputPath, int width, int height, const std::vector<uint8_t>& rgbaData) const {
-#if HAS_STB_IMAGE_WRITE
-    const size_t expectedSize = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
-    if (rgbaData.size() != expectedSize) {
-        return false;
-    }
-
-    return stbi_write_png(outputPath.string().c_str(), width, height, 4, rgbaData.data(), width * 4) != 0;
-#else
-    (void)outputPath;
-    (void)width;
-    (void)height;
-    (void)rgbaData;
-    return false;
-#endif
-}
-
-bool HelloTriangleApplication::runRifeSmokeTestAndSaveImages() {
-    if (!ncnnModelLoaded || !rifeModelAttachedToRenderer) {
-        std::cerr << "[RIFE] smoke test request ignored: model is not ready" << std::endl;
-        return false;
-    }
-
-    if (!hasRifeFramePair) {
-        std::cout << "[RIFE] smoke test request queued: waiting for captured frame pair" << std::endl;
-        return false;
-    }
-
-    auto nowMs = []() {
-        return std::chrono::duration<double, std::milli>(
-            std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-    };
-
-    const double frameCaptureMs =
-        (lastFramePairCaptureProcessMs > 0.0)
-        ? lastFramePairCaptureProcessMs
-        : lastFrameCaptureProcessMs;
-    double inferenceMs = 0.0;
-    double outputUploadDisplayMs = 0.0;
-
-    auto printSmokeStats = [&](const char* status) {
-        std::cout << "[RIFE][STATS] status=" << status
-                  << ", frame_capture=" << frameCaptureMs << " ms"
-                  << ", inference=" << inferenceMs << " ms"
-                  << ", output_upload_display=" << outputUploadDisplayMs << " ms"
-                  << std::endl;
-    };
-
-    if (hasRifeGpuFramePair &&
-        previousRifeGpuFrameIndex < frameCaptureBuffers.size() &&
-        currentRifeGpuFrameIndex < frameCaptureBuffers.size() &&
-        !rifeOutputBuffers.empty() &&
-        rifeOutputBuffers[0].gpuBuffer != VK_NULL_HANDLE &&
-        rifeDisplayBufferSize > 0) {
-        const int inputW = static_cast<int>(swapChainExtent.width);
-        const int inputH = static_cast<int>(swapChainExtent.height);
-        const int inferenceW = std::min(inputW, std::max(32, inputW / rifeInferenceScaleDivisor));
-        const int inferenceH = std::min(inputH, std::max(32, inputH / rifeInferenceScaleDivisor));
-        const auto& prevGpu = frameCaptureBuffers[previousRifeGpuFrameIndex];
-        const auto& currGpu = frameCaptureBuffers[currentRifeGpuFrameIndex];
-
-        std::cout << "[RIFE][PATH] inference=RIFE::process_v4_gpu"
-                  << " (swapchain VkImage -> device-local VkBuffer -> GPU downscale "
-                  << inferenceW << "x" << inferenceH
-                  << " -> ncnn VkMat -> GPU upscale -> display VkBuffer)"
-                  << std::endl;
-
-        const double inferenceStartMs = nowMs();
-        const int processRet = rifeRunner.processGpuRgbaFrames(
-            prevGpu.gpuBuffer,
-            prevGpu.gpuMemory,
-            prevGpu.size,
-            currGpu.gpuBuffer,
-            currGpu.gpuMemory,
-            currGpu.size,
-            rifeOutputBuffers[0].gpuBuffer,
-            rifeOutputBuffers[0].gpuMemory,
-            rifeOutputBuffers[0].size,
-            inputW,
-            inputH,
-            inferenceW,
-            inferenceH,
-            0.5f
-        );
-        inferenceMs = nowMs() - inferenceStartMs;
-
-        if (processRet == 0) {
-            rifeOutputBuffers[0].ready = true;
-            rifeOutputBuffers[0].sequence = nextRifeOutputSequence++;
-            hasRifeDisplayFrame = true;
-            rifeSmokeTestDone = true;
-            std::cout << "[RIFE] GPU interpolated frame queued for swapchain display"
-                      << " (display=" << inputW << "x" << inputH
-                      << ", inference=" << inferenceW << "x" << inferenceH << ")" << std::endl;
-            printSmokeStats("passed_gpu");
-            return true;
-        }
-
-        std::cerr << "[RIFE] GPU path failed; CPU Mat fallback is disabled for real-time mode"
-                  << " (code=" << processRet << ")" << std::endl;
-        rifeSmokeTestFailed = true;
-        printSmokeStats("failed_gpu");
-        return true;
-    }
-
-    std::cerr << "[RIFE] GPU frame pair is not available; CPU readback path is disabled for real-time mode" << std::endl;
-    rifeSmokeTestFailed = true;
-    printSmokeStats("failed_gpu");
-    return true;
-
-    std::vector<uint8_t> prevBgr;
-    std::vector<uint8_t> currBgr;
-    std::vector<uint8_t> prevRgba;
-    std::vector<uint8_t> currRgba;
-    if (!convertCapturedFrameToBgr(rifePreviousFrameRGBA, prevBgr) ||
-        !convertCapturedFrameToBgr(rifeCurrentFrameRGBA, currBgr) ||
-        !convertCapturedFrameToRgba(rifePreviousFrameRGBA, prevRgba) ||
-        !convertCapturedFrameToRgba(rifeCurrentFrameRGBA, currRgba)) {
-        std::cerr << "[RIFE] smoke test failed: unsupported swapchain format for image conversion (format="
-                  << swapChainImageFormat << ")" << std::endl;
-        rifeSmokeTestFailed = true;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    const size_t expectedBgrSize =
-        static_cast<size_t>(swapChainExtent.width) *
-        static_cast<size_t>(swapChainExtent.height) * 3;
-    if (prevBgr.size() != expectedBgrSize || currBgr.size() != expectedBgrSize) {
-        std::cerr << "[RIFE] smoke test failed: unexpected BGR frame size"
-                  << " (prev=" << prevBgr.size()
-                  << ", curr=" << currBgr.size()
-                  << ", expected=" << expectedBgrSize << ")" << std::endl;
-        rifeSmokeTestFailed = true;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    const int inputW = static_cast<int>(swapChainExtent.width);
-    const int inputH = static_cast<int>(swapChainExtent.height);
-
-    {
-        std::cout << "[RIFE][PATH] inference=RIFE::process_v4 Vulkan path"
-                  << " (GPU preproc + ncnn VkMat inference + GPU postproc; final image readback only)"
-                  << std::endl;
-
-        std::vector<uint8_t> resultBgr;
-        const double inferenceStartMs = nowMs();
-        const int processRet = rifeRunner.processBgrFrames(prevBgr, currBgr, inputW, inputH, 0.5f, resultBgr);
-        inferenceMs = nowMs() - inferenceStartMs;
-
-        if (processRet != 0 || resultBgr.size() != expectedBgrSize) {
-            std::cerr << "[RIFE] smoke test failed: Vulkan RIFE process failed"
-                      << " (code=" << processRet
-                      << ", output_bytes=" << resultBgr.size()
-                      << ", expected=" << expectedBgrSize << ")" << std::endl;
-            rifeSmokeTestFailed = true;
-            printSmokeStats("failed");
-            return true;
-        }
-
-        std::vector<uint8_t> resultRgba(static_cast<size_t>(inputW) * static_cast<size_t>(inputH) * 4, 255);
-        for (size_t i = 0, j = 0; i < static_cast<size_t>(inputW) * static_cast<size_t>(inputH); ++i, j += 3) {
-            const size_t dst = i * 4;
-            resultRgba[dst + 0] = resultBgr[j + 2];
-            resultRgba[dst + 1] = resultBgr[j + 1];
-            resultRgba[dst + 2] = resultBgr[j + 0];
-            resultRgba[dst + 3] = 255;
-        }
-
-        const double outputStartMs = nowMs();
-        const size_t outputBytes = resultRgba.size();
-        if (outputBytes > static_cast<size_t>(rifeDisplayBufferSize)) {
-            std::cerr << "[RIFE] interpolation failed: display buffer is not ready" << std::endl;
-            rifeSmokeTestFailed = true;
-            outputUploadDisplayMs = nowMs() - outputStartMs;
-            printSmokeStats("failed");
-            return true;
-        }
-
-        outputUploadDisplayMs = nowMs() - outputStartMs;
-        std::cerr << "[RIFE] CPU upload path is disabled for pipelined device-local output buffers" << std::endl;
-        rifeSmokeTestFailed = true;
-        printSmokeStats("failed");
-        return true;
-
-        rifeSmokeTestDone = true;
-        std::cout << "[RIFE] interpolated frame queued for swapchain display"
-                  << " (input=" << inputW << "x" << inputH << ")" << std::endl;
-        printSmokeStats("passed");
-        return true;
-    }
-
-    const int paddedW = (inputW + 31) / 32 * 32;
-    const int paddedH = (inputH + 31) / 32 * 32;
-
-    ncnn::Mat input0 = ncnn::Mat::from_pixels_resize(prevBgr.data(), ncnn::Mat::PIXEL_BGR, inputW, inputH, paddedW, paddedH);
-    ncnn::Mat input1 = ncnn::Mat::from_pixels_resize(currBgr.data(), ncnn::Mat::PIXEL_BGR, inputW, inputH, paddedW, paddedH);
-
-    const float normVals[3] = { 1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f };
-    input0.substract_mean_normalize(nullptr, normVals);
-    input1.substract_mean_normalize(nullptr, normVals);
-
-    if (input0.empty() || input1.empty()) {
-        std::cerr << "[RIFE] smoke test failed: input conversion to ncnn::Mat failed" << std::endl;
-        rifeSmokeTestFailed = true;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    ncnn::Extractor extractor = net.create_extractor();
-    const double inferenceStartMs = nowMs();
-
-    const std::array<const char*, 4> input0Candidates = { "in0", "input0", "img0", "I0" };
-    const std::array<const char*, 4> input1Candidates = { "in1", "input1", "img1", "I1" };
-    const std::array<const char*, 4> input2Candidates = { "in2", "input2", "timestep", "time_step" };
-
-    auto inputBlobExists = [&](const char* blobName) {
-        const auto& names = net.input_names();
-        for (const char* name : names) {
-            if (name && std::strcmp(name, blobName) == 0) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    auto outputBlobExists = [&](const char* blobName) {
-        const auto& names = net.output_names();
-        for (const char* name : names) {
-            if (name && std::strcmp(name, blobName) == 0) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    auto bindInputByCandidates = [&](const std::array<const char*, 4>& candidates,
-                                     const ncnn::Mat& input,
-                                     std::string& boundName,
-                                     int& lastRet) {
-        for (const char* candidate : candidates) {
-            if (!inputBlobExists(candidate)) {
-                continue;
-            }
-
-            lastRet = extractor.input(candidate, input);
-            if (lastRet == 0) {
-                boundName = candidate;
-                return true;
-            }
-        }
-
-        boundName.clear();
-        return false;
-    };
-
-    std::string boundInput0Name;
-    std::string boundInput1Name;
-    int input0Ret = -1;
-    int input1Ret = -1;
-
-    const bool input0Bound = bindInputByCandidates(input0Candidates, input0, boundInput0Name, input0Ret);
-    const bool input1Bound = bindInputByCandidates(input1Candidates, input1, boundInput1Name, input1Ret);
-
-    if (!input0Bound || !input1Bound) {
-        std::cerr << "[RIFE] smoke test failed: could not bind flownet inputs"
-                  << " (input0_ret=" << input0Ret
-                  << ", input1_ret=" << input1Ret << ")" << std::endl;
-        std::cerr << "[RIFE] tried names: input0/input1, in0/in1, img0/img1, I0/I1" << std::endl;
-        std::cerr << "[RIFE] available model inputs:";
-        for (const char* name : net.input_names()) {
-            if (name) {
-                std::cerr << " " << name;
-            }
-        }
-        std::cerr << std::endl;
-        rifeSmokeTestFailed = true;
-        inferenceMs = nowMs() - inferenceStartMs;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    ncnn::Mat timestep(paddedW, paddedH);
-    timestep.fill(0.5f);
-    std::string boundInput2Name;
-    int input2Ret = -1;
-    const bool input2Bound = bindInputByCandidates(input2Candidates, timestep, boundInput2Name, input2Ret);
-
-    if (input2Bound) {
-        std::cout << "[RIFE] bound optional timestep input as '" << boundInput2Name
-                  << "' (t=0.5)" << std::endl;
-    }
-
-    ncnn::Mat flow;
-    int extractRet = -1;
-    std::string boundFlowName;
-    bool extractedAsRgb = false;
-
-    auto tryExtractRgb = [&](const char* blobName) {
-        if (!blobName || !outputBlobExists(blobName)) {
-            return false;
-        }
-
-        extractRet = extractor.extract(blobName, flow);
-        if (extractRet == 0 && !flow.empty() && (flow.c == 3 || flow.c == 4)) {
-            boundFlowName = blobName;
-            extractedAsRgb = true;
-            return true;
-        }
-
-        return false;
-    };
-
-    auto tryExtractFlow = [&](const char* blobName) {
-        if (!blobName || !outputBlobExists(blobName)) {
-            return false;
-        }
-
-        extractRet = extractor.extract(blobName, flow);
-        if (extractRet == 0 && !flow.empty() && flow.c >= 2) {
-            boundFlowName = blobName;
-            extractedAsRgb = false;
-            return true;
-        }
-
-        return false;
-    };
-
-    if (rifePreferredOutputIsRgb && !rifePreferredOutputBlobName.empty()) {
-        (void)tryExtractRgb(rifePreferredOutputBlobName.c_str());
-    }
-
-    if (boundFlowName.empty()) {
-        const std::array<const char*, 2> rgbCandidates = { "interp", "output" };
-        for (const char* rgbName : rgbCandidates) {
-            if (tryExtractRgb(rgbName)) {
-                break;
-            }
-        }
-    }
-
-    if (boundFlowName.empty() && !rifePreferredOutputIsRgb && !rifePreferredOutputBlobName.empty()) {
-        (void)tryExtractFlow(rifePreferredOutputBlobName.c_str());
-    }
-
-    if (boundFlowName.empty()) {
-        const std::array<const char*, 4> flowCandidates = { "out0", "flow", "output", "interp" };
-        for (const char* flowName : flowCandidates) {
-            if (tryExtractFlow(flowName)) {
-                break;
-            }
-        }
-    }
-
-    if (extractRet != 0 || flow.empty()) {
-        std::cerr << "[RIFE] smoke test failed: extractor could not produce valid 'flow' output"
-                  << " (code=" << extractRet << ", c=" << flow.c << ")" << std::endl;
-        std::cerr << "[RIFE] bound input names: in0='" << boundInput0Name
-                  << "', in1='" << boundInput1Name << "'";
-        if (input2Bound) {
-            std::cerr << ", in2='" << boundInput2Name << "'";
-        }
-        std::cerr << std::endl;
-        std::cerr << "[RIFE] tried output names: interp/output (RGB), then flow/out0/output/interp (flow)" << std::endl;
-        rifeSmokeTestFailed = true;
-        inferenceMs = nowMs() - inferenceStartMs;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    rifePreferredOutputBlobName = boundFlowName;
-    rifePreferredOutputIsRgb = extractedAsRgb;
-
-    if (flow.w <= 0 || flow.h <= 0) {
-        std::cerr << "[RIFE] smoke test failed: invalid output tensor shape ("
-                  << flow.w << "x" << flow.h << "x" << flow.c << ")" << std::endl;
-        rifeSmokeTestFailed = true;
-        inferenceMs = nowMs() - inferenceStartMs;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    inferenceMs = nowMs() - inferenceStartMs;
-
-#if HAS_NCNN_BENCHMARK && ENABLE_BENCHNCNN
-    {
-        constexpr int warmupRuns = 3;
-        constexpr int benchmarkRuns = 20;
-
-        auto runBoundRifeInference = [&](ncnn::Mat& outFlow) {
-            ncnn::Extractor benchExtractor = net.create_extractor();
-
-            int ret = benchExtractor.input(boundInput0Name.c_str(), input0);
-            if (ret != 0) {
-                return ret;
-            }
-
-            ret = benchExtractor.input(boundInput1Name.c_str(), input1);
-            if (ret != 0) {
-                return ret;
-            }
-
-            if (input2Bound) {
-                ncnn::Mat benchTimestep(paddedW, paddedH);
-                benchTimestep.fill(0.5f);
-                ret = benchExtractor.input(boundInput2Name.c_str(), benchTimestep);
-                if (ret != 0) {
-                    return ret;
-                }
-            }
-
-            return benchExtractor.extract(boundFlowName.c_str(), outFlow);
-        };
-
-        for (int i = 0; i < warmupRuns; ++i) {
-            ncnn::Mat warmFlow;
-            const int warmRet = runBoundRifeInference(warmFlow);
-            if (warmRet != 0 || warmFlow.empty()) {
-                std::cerr << "[NCNN][BENCH] warmup failed (code=" << warmRet << ")" << std::endl;
-                break;
-            }
-        }
-
-        double totalMs = 0.0;
-        double minMs = std::numeric_limits<double>::max();
-        double maxMs = 0.0;
-        int successRuns = 0;
-
-        for (int i = 0; i < benchmarkRuns; ++i) {
-            ncnn::Mat benchFlow;
-            const double startMs = ncnn::get_current_time();
-            const int benchRet = runBoundRifeInference(benchFlow);
-            const double endMs = ncnn::get_current_time();
-
-            if (benchRet != 0 || benchFlow.empty()) {
-                std::cerr << "[NCNN][BENCH] benchmark run failed (code=" << benchRet << ")" << std::endl;
-                break;
-            }
-
-            const double elapsedMs = endMs - startMs;
-            totalMs += elapsedMs;
-            minMs = std::min(minMs, elapsedMs);
-            maxMs = std::max(maxMs, elapsedMs);
-            ++successRuns;
-        }
-
-        if (successRuns > 0) {
-            const double avgMs = totalMs / static_cast<double>(successRuns);
-            std::cout << "[NCNN][BENCH] RIFE inference stats -> "
-                      << "runs=" << successRuns
-                      << ", avg=" << avgMs << " ms"
-                      << ", min=" << minMs << " ms"
-                      << ", max=" << maxMs << " ms"
-                      << std::endl;
-        }
-    }
-#else
-    std::cout << "[NCNN][BENCH] benchncnn disabled; benchncnn-style stats skipped." << std::endl;
-#endif
-
-    std::cout << "[RIFE] extractor bindings: in0='" << boundInput0Name
-              << "', in1='" << boundInput1Name << "'";
-    if (input2Bound) {
-        std::cout << ", in2='" << boundInput2Name << "'";
-    }
-    std::cout << ", out='" << boundFlowName << "'" << std::endl;
-
-    std::vector<uint8_t> resultRgba(static_cast<size_t>(inputW) * static_cast<size_t>(inputH) * 4, 0);
-    const bool outputLooksRgb = extractedAsRgb;
-    if (outputLooksRgb) {
-        const int outW = flow.w;
-        const int outH = flow.h;
-
-        ncnn::Mat outB = flow.channel(0);
-        ncnn::Mat outG = flow.channel(1);
-        ncnn::Mat outR = flow.channel(2);
-        ncnn::Mat outA;
-        const bool hasAlpha = flow.c >= 4;
-        if (hasAlpha) {
-            outA = flow.channel(3);
-        }
-
-        float minOut = std::numeric_limits<float>::max();
-        float maxOut = std::numeric_limits<float>::lowest();
-        for (int y = 0; y < outH; ++y) {
-            const float* rowR = outR.row(y);
-            const float* rowG = outG.row(y);
-            const float* rowB = outB.row(y);
-            for (int x = 0; x < outW; ++x) {
-                minOut = std::min(minOut, rowR[x]);
-                minOut = std::min(minOut, rowG[x]);
-                minOut = std::min(minOut, rowB[x]);
-                maxOut = std::max(maxOut, rowR[x]);
-                maxOut = std::max(maxOut, rowG[x]);
-                maxOut = std::max(maxOut, rowB[x]);
-            }
-        }
-
-        const bool outputInZeroToOne = minOut >= -0.01f && maxOut <= 1.01f;
-        const bool outputInMinusOneToOne = minOut >= -1.01f && maxOut <= 1.01f && minOut < -0.01f;
-
-        std::cout << "[RIFE] rgb output range: [" << minOut << ", " << maxOut << "]" << std::endl;
-
-        for (int y = 0; y < inputH; ++y) {
-            const int sy = std::min(outH - 1, y * outH / inputH);
-            const float* rowR = outR.row(sy);
-            const float* rowG = outG.row(sy);
-            const float* rowB = outB.row(sy);
-
-            for (int x = 0; x < inputW; ++x) {
-                const int sx = std::min(outW - 1, x * outW / inputW);
-                float r = rowR[sx];
-                float g = rowG[sx];
-                float b = rowB[sx];
-
-                if (outputInMinusOneToOne) {
-                    r = (r * 0.5f + 0.5f) * 255.0f;
-                    g = (g * 0.5f + 0.5f) * 255.0f;
-                    b = (b * 0.5f + 0.5f) * 255.0f;
-                }
-                else if (outputInZeroToOne) {
-                    r *= 255.0f;
-                    g *= 255.0f;
-                    b *= 255.0f;
-                }
-
-                const size_t dst = (static_cast<size_t>(y) * inputW + static_cast<size_t>(x)) * 4;
-                resultRgba[dst + 0] = static_cast<uint8_t>(std::clamp(r, 0.0f, 255.0f));
-                resultRgba[dst + 1] = static_cast<uint8_t>(std::clamp(g, 0.0f, 255.0f));
-                resultRgba[dst + 2] = static_cast<uint8_t>(std::clamp(b, 0.0f, 255.0f));
-                uint8_t alpha = 255;
-                if (hasAlpha) {
-                    float a = outA.row(sy)[sx];
-                    if (outputInMinusOneToOne) {
-                        a = (a * 0.5f + 0.5f) * 255.0f;
-                    }
-                    else if (outputInZeroToOne) {
-                        a *= 255.0f;
-                    }
-                    alpha = static_cast<uint8_t>(std::clamp(a, 0.0f, 255.0f));
-                }
-
-                resultRgba[dst + 3] = alpha;
-            }
-        }
-    }
-    else if (flow.c >= 2) {
-        ncnn::Mat flow0X = flow.channel(0);
-        ncnn::Mat flow0Y = flow.channel(1);
-        const bool hasBackwardFlow = flow.c >= 4;
-        ncnn::Mat flow1X;
-        ncnn::Mat flow1Y;
-        if (hasBackwardFlow) {
-            flow1X = flow.channel(2);
-            flow1Y = flow.channel(3);
-        }
-
-        const int flowW = flow.w;
-        const int flowH = flow.h;
-
-        if (flowW <= 0 || flowH <= 0) {
-            std::cerr << "[RIFE] smoke test failed: invalid flow dimensions ("
-                      << flowW << "x" << flowH << ")" << std::endl;
-            rifeSmokeTestFailed = true;
-            printSmokeStats("failed");
-            return true;
-        }
-
-        auto sampleBgrBilinear = [&](const std::vector<uint8_t>& bgr, float fx, float fy, float outRgb[3]) -> bool {
-            if (bgr.size() < expectedBgrSize) {
-                outRgb[0] = 0.0f;
-                outRgb[1] = 0.0f;
-                outRgb[2] = 0.0f;
-                return false;
-            }
-
-            if (fx < 0.0f || fy < 0.0f || fx > static_cast<float>(inputW - 1) || fy > static_cast<float>(inputH - 1)) {
-                outRgb[0] = 0.0f;
-                outRgb[1] = 0.0f;
-                outRgb[2] = 0.0f;
-                return false;
-            }
-
-            const int x0 = static_cast<int>(fx);
-            const int y0 = static_cast<int>(fy);
-            const int x1 = std::min(x0 + 1, inputW - 1);
-            const int y1 = std::min(y0 + 1, inputH - 1);
-
-            const float tx = fx - static_cast<float>(x0);
-            const float ty = fy - static_cast<float>(y0);
-
-            auto pixel = [&](int x, int y, int c) -> float {
-                const size_t idx = (static_cast<size_t>(y) * inputW + static_cast<size_t>(x)) * 3 + static_cast<size_t>(c);
-                if (idx >= bgr.size()) {
-                    return 0.0f;
-                }
-                return static_cast<float>(bgr[idx]);
-            };
-
-            for (int c = 0; c < 3; ++c) {
-                const float p00 = pixel(x0, y0, c);
-                const float p10 = pixel(x1, y0, c);
-                const float p01 = pixel(x0, y1, c);
-                const float p11 = pixel(x1, y1, c);
-                const float top = p00 + (p10 - p00) * tx;
-                const float bot = p01 + (p11 - p01) * tx;
-                outRgb[c] = top + (bot - top) * ty;
-            }
-
-            return true;
-        };
-
-        auto sampleFlowBilinear = [&](const ncnn::Mat& flowXMat, const ncnn::Mat& flowYMat, float px, float py, float& outFx, float& outFy) {
-            const float sx = (static_cast<float>(flowW) == static_cast<float>(inputW))
-                ? px
-                : ((px + 0.5f) * static_cast<float>(flowW) / static_cast<float>(inputW) - 0.5f);
-            const float sy = (static_cast<float>(flowH) == static_cast<float>(inputH))
-                ? py
-                : ((py + 0.5f) * static_cast<float>(flowH) / static_cast<float>(inputH) - 0.5f);
-
-            const float csx = std::clamp(sx, 0.0f, static_cast<float>(flowW - 1));
-            const float csy = std::clamp(sy, 0.0f, static_cast<float>(flowH - 1));
-
-            const int x0 = static_cast<int>(csx);
-            const int y0 = static_cast<int>(csy);
-            const int x1 = std::min(x0 + 1, flowW - 1);
-            const int y1 = std::min(y0 + 1, flowH - 1);
-
-            const float tx = csx - static_cast<float>(x0);
-            const float ty = csy - static_cast<float>(y0);
-
-            const float* rowX0 = flowXMat.row(y0);
-            const float* rowX1 = flowXMat.row(y1);
-            const float* rowY0 = flowYMat.row(y0);
-            const float* rowY1 = flowYMat.row(y1);
-
-            const float fx00 = rowX0[x0];
-            const float fx10 = rowX0[x1];
-            const float fx01 = rowX1[x0];
-            const float fx11 = rowX1[x1];
-
-            const float fy00 = rowY0[x0];
-            const float fy10 = rowY0[x1];
-            const float fy01 = rowY1[x0];
-            const float fy11 = rowY1[x1];
-
-            const float topFx = fx00 + (fx10 - fx00) * tx;
-            const float botFx = fx01 + (fx11 - fx01) * tx;
-            const float topFy = fy00 + (fy10 - fy00) * tx;
-            const float botFy = fy01 + (fy11 - fy01) * tx;
-
-            outFx = topFx + (botFx - topFx) * ty;
-            outFy = topFy + (botFy - topFy) * ty;
-        };
-
-        for (int y = 0; y < inputH; ++y) {
-            for (int x = 0; x < inputW; ++x) {
-                const size_t dst = (static_cast<size_t>(y) * inputW + static_cast<size_t>(x)) * 4;
-
-                float flow0x = 0.0f;
-                float flow0y = 0.0f;
-                float flow1x = 0.0f;
-                float flow1y = 0.0f;
-
-                sampleFlowBilinear(flow0X, flow0Y, static_cast<float>(x), static_cast<float>(y), flow0x, flow0y);
-
-                if (hasBackwardFlow) {
-                    sampleFlowBilinear(flow1X, flow1Y, static_cast<float>(x), static_cast<float>(y), flow1x, flow1y);
-                }
-                else {
-                    flow1x = -flow0x;
-                    flow1y = -flow0y;
-                }
-
-                const float flowClamp = 128.0f;
-                flow0x = std::clamp(flow0x, -flowClamp, flowClamp);
-                flow0y = std::clamp(flow0y, -flowClamp, flowClamp);
-                flow1x = std::clamp(flow1x, -flowClamp, flowClamp);
-                flow1y = std::clamp(flow1y, -flowClamp, flowClamp);
-
-                float prevRgb[3]{};
-                float currRgb[3]{};
-
-                const float halfT = 0.5f;
-                const float prevSampleX = static_cast<float>(x) - flow0x * halfT;
-                const float prevSampleY = static_cast<float>(y) - flow0y * halfT;
-                const float currSampleX = static_cast<float>(x) - flow1x * halfT;
-                const float currSampleY = static_cast<float>(y) - flow1y * halfT;
-
-                const bool prevValid = sampleBgrBilinear(prevBgr, prevSampleX, prevSampleY, prevRgb);
-                const bool currValid = sampleBgrBilinear(currBgr, currSampleX, currSampleY, currRgb);
-
-                float outB = 0.0f;
-                float outG = 0.0f;
-                float outR = 0.0f;
-                const float weightPrev = prevValid ? 1.0f : 0.0f;
-                const float weightCurr = currValid ? 1.0f : 0.0f;
-                const float weightSum = weightPrev + weightCurr;
-
-                if (weightSum > 0.0f) {
-                    outB = std::clamp((prevRgb[0] * weightPrev + currRgb[0] * weightCurr) / weightSum, 0.0f, 255.0f);
-                    outG = std::clamp((prevRgb[1] * weightPrev + currRgb[1] * weightCurr) / weightSum, 0.0f, 255.0f);
-                    outR = std::clamp((prevRgb[2] * weightPrev + currRgb[2] * weightCurr) / weightSum, 0.0f, 255.0f);
-                }
-                else {
-                    const size_t src = (static_cast<size_t>(y) * inputW + static_cast<size_t>(x)) * 3;
-                    if (src + 2 >= prevBgr.size() || src + 2 >= currBgr.size()) {
-                        continue;
-                    }
-                    outB = std::clamp(0.5f * (static_cast<float>(prevBgr[src + 0]) + static_cast<float>(currBgr[src + 0])), 0.0f, 255.0f);
-                    outG = std::clamp(0.5f * (static_cast<float>(prevBgr[src + 1]) + static_cast<float>(currBgr[src + 1])), 0.0f, 255.0f);
-                    outR = std::clamp(0.5f * (static_cast<float>(prevBgr[src + 2]) + static_cast<float>(currBgr[src + 2])), 0.0f, 255.0f);
-                }
-
-                resultRgba[dst + 0] = static_cast<uint8_t>(outR);
-                resultRgba[dst + 1] = static_cast<uint8_t>(outG);
-                resultRgba[dst + 2] = static_cast<uint8_t>(outB);
-                resultRgba[dst + 3] = 255;
-            }
-        }
-    }
-    else {
-        std::cerr << "[RIFE] smoke test failed: output has unsupported channel count (c=" << flow.c << ")" << std::endl;
-        rifeSmokeTestFailed = true;
-        printSmokeStats("failed");
-        return true;
-    }
-
-#if !HAS_STB_IMAGE_WRITE
-    std::cerr << "[RIFE] smoke test failed: stb_image_write.h not found, PNG export unavailable" << std::endl;
-    rifeSmokeTestFailed = true;
-    printSmokeStats("failed");
-    return true;
-#else
-    const double outputStartMs = nowMs();
-    const auto timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-
-    std::filesystem::path outputDir = std::filesystem::path("inference_test");
-    std::error_code ec;
-    std::filesystem::create_directories(outputDir, ec);
-    if (ec) {
-        std::cerr << "[RIFE] smoke test failed: could not create inference_test folder ("
-                  << ec.message() << ")" << std::endl;
-        rifeSmokeTestFailed = true;
-        outputUploadDisplayMs = nowMs() - outputStartMs;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    const std::filesystem::path input0Path = outputDir / ("input_prev_" + std::to_string(timestampMs) + ".png");
-    const std::filesystem::path input1Path = outputDir / ("input_curr_" + std::to_string(timestampMs) + ".png");
-    const std::filesystem::path resultPath = outputDir / ("result_interp_" + std::to_string(timestampMs) + ".png");
-
-    const bool saveInput0Ok = writeRgbaPng(input0Path, inputW, inputH, prevRgba);
-    const bool saveInput1Ok = writeRgbaPng(input1Path, inputW, inputH, currRgba);
-    const bool saveResultOk = writeRgbaPng(resultPath, inputW, inputH, resultRgba);
-
-    if (!saveInput0Ok || !saveInput1Ok || !saveResultOk) {
-        std::cerr << "[RIFE] smoke test failed: PNG write failed" << std::endl;
-        rifeSmokeTestFailed = true;
-        outputUploadDisplayMs = nowMs() - outputStartMs;
-        printSmokeStats("failed");
-        return true;
-    }
-
-    outputUploadDisplayMs = nowMs() - outputStartMs;
-
-    rifeSmokeTestDone = true;
-    std::cout << "[RIFE] smoke test passed: flownet inference ok, flow="
-              << flow.w << "x" << flow.h << "x" << flow.c
-              << " (input=" << paddedW << "x" << paddedH << ")" << std::endl;
-    std::cout << "[RIFE] inference_test outputs saved:" << std::endl;
-    std::cout << "  - " << input0Path.string() << std::endl;
-    std::cout << "  - " << input1Path.string() << std::endl;
-    std::cout << "  - " << resultPath.string() << std::endl;
-    printSmokeStats("passed");
-
-    return true;
-#endif
 }
 
 #endif
@@ -1628,8 +645,6 @@ void HelloTriangleApplication::createFrameProcessingResources() {
     }
 
     pendingCaptureSlotByFrame.fill(UINT32_MAX);
-    hasCurrentRifeFrame = false;
-    hasRifeFramePair = false;
     hasRifeGpuFramePair = false;
     currentRifeGpuFrameIndex = UINT32_MAX;
     previousRifeGpuFrameIndex = UINT32_MAX;
@@ -1637,8 +652,6 @@ void HelloTriangleApplication::createFrameProcessingResources() {
     previousFrameCaptureProcessMs = 0.0;
     lastFrameCaptureProcessMs = 0.0;
     lastFramePairCaptureProcessMs = 0.0;
-    rifeCurrentFrameRGBA.clear();
-    rifePreviousFrameRGBA.clear();
 }
 
 void HelloTriangleApplication::cleanupFrameProcessingResources() {
@@ -1694,8 +707,6 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
 
     frameCaptureBuffers.clear();
     pendingCaptureSlotByFrame.fill(UINT32_MAX);
-    hasCurrentRifeFrame = false;
-    hasRifeFramePair = false;
     hasRifeGpuFramePair = false;
     currentRifeGpuFrameIndex = UINT32_MAX;
     previousRifeGpuFrameIndex = UINT32_MAX;
@@ -1703,8 +714,6 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
     previousFrameCaptureProcessMs = 0.0;
     lastFrameCaptureProcessMs = 0.0;
     lastFramePairCaptureProcessMs = 0.0;
-    rifeCurrentFrameRGBA.clear();
-    rifePreviousFrameRGBA.clear();
 }
 
 uint32_t HelloTriangleApplication::findAvailableRifeCaptureSlot() const {
@@ -2030,8 +1039,6 @@ void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
         previousRifeGpuFrameIndex != currentRifeGpuFrameIndex &&
         previousRifeGpuFrameIndex < frameCaptureBuffers.size();
 
-    hasCurrentRifeFrame = true;
-    hasRifeFramePair = hasRifeGpuFramePair;
     ++capturedFrameCount;
 
     if (capturedFrameCount == 1) {
@@ -2256,7 +1263,6 @@ void HelloTriangleApplication::pollAsyncRifeInference() {
     if (result.processRet == 0) {
         if (result.outputIndex >= rifeOutputBuffers.size()) {
             std::cerr << "[RIFE] async GPU interpolation finished with invalid output slot" << std::endl;
-            rifeSmokeTestFailed = true;
             return;
         }
 
@@ -2272,7 +1278,6 @@ void HelloTriangleApplication::pollAsyncRifeInference() {
         rifeOutputBuffers[result.outputIndex].ready = true;
         rifeOutputBuffers[result.outputIndex].sequence = nextRifeOutputSequence++;
         hasRifeDisplayFrame = true;
-        rifeSmokeTestDone = true;
         if (previousDivisor != rifeInferenceScaleDivisor || (rifeCompletedInferenceCount % 120) == 1) {
             std::cout << "[RIFE] async inference"
                       << " display=" << result.inputW << "x" << result.inputH
@@ -2286,7 +1291,6 @@ void HelloTriangleApplication::pollAsyncRifeInference() {
     std::cerr << "[RIFE] async GPU interpolation failed"
               << " (code=" << result.processRet
               << ", inference_ms=" << result.inferenceMs << ")" << std::endl;
-    rifeSmokeTestFailed = true;
 }
 
 bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
@@ -2350,7 +1354,6 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
     rifeOutputBuffers[outputIndex].inUseByInference = true;
     rifeOutputBuffers[outputIndex].ready = false;
     rifeOutputBuffers[outputIndex].sequence = 0;
-    hasRifeFramePair = false;
     hasRifeGpuFramePair = false;
     rifeInferenceRequestWaitingForFramePair = false;
 

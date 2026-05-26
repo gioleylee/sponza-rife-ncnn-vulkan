@@ -68,9 +68,6 @@
     <ClInclude Include="WindowInput.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="rife_src\warp.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="validation_layers.h">
       <Filter>Header Files</Filter>
     </ClInclude>

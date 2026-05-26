@@ -171,9 +171,6 @@ void HelloTriangleApplication::initNcnn() {
         return;
     }
 
-    std::cout << "[RIFE][PATH] compile_flags: HAS_NCNN=" << HAS_NCNN
-              << ", HAS_RIFE_WARP_VK=" << HAS_RIFE_WARP_VK << std::endl;
-
     ncnn::create_gpu_instance();
 
     const int gpuCount = ncnn::get_gpu_count();
@@ -189,9 +186,6 @@ void HelloTriangleApplication::initNcnn() {
     std::cout << "[NCNN] initialized (gpu_count=" << gpuCount
               << ", renderer_gpu_index=" << ncnnRendererDeviceIndex
               << ", vulkan_compute=" << (net.opt.use_vulkan_compute ? "on" : "off") << ")" << std::endl;
-    std::cout << "[RIFE][PATH] startup: gpu_count=" << gpuCount
-              << ", net.opt.use_vulkan_compute=" << (net.opt.use_vulkan_compute ? "true" : "false")
-              << std::endl;
 }
 
 void HelloTriangleApplication::shutdownNcnn() {
@@ -207,8 +201,6 @@ void HelloTriangleApplication::shutdownNcnn() {
     ncnnRendererDeviceIndex = -1;
     ncnnModelLoaded = false;
     rifeModelAttachedToRenderer = false;
-
-    std::cout << "[NCNN] shutdown complete" << std::endl;
 }
 
 bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const std::string& binPath) {
@@ -223,34 +215,6 @@ bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const
     ncnnModelLoaded = true;
 
     std::cout << "[NCNN] model loaded: " << paramPath << " + " << binPath << std::endl;
-    std::cout << "[RIFE][PATH] startup: model_set_vulkan_device(renderer_vkdevice)_called="
-              << (rifeRunner.wasVulkanDeviceSet() ? "true" : "false") << std::endl;
-
-    std::cout << "[RIFE][PATH] model_inputs:";
-    const auto& inputNames = net.input_names();
-    if (inputNames.empty()) {
-        std::cout << " <none>";
-    }
-    else {
-        for (const char* name : inputNames) {
-            std::cout << " " << (name ? name : "<null>");
-        }
-    }
-    std::cout << std::endl;
-
-    std::cout << "[RIFE][PATH] model_outputs:";
-    const auto& outputNames = net.output_names();
-    if (outputNames.empty()) {
-        std::cout << " <none>";
-    }
-    else {
-        for (const char* name : outputNames) {
-            std::cout << " " << (name ? name : "<null>");
-        }
-    }
-    std::cout << std::endl;
-
-    std::cout << "[RIFE][PATH] extraction_path=ncnn::VkMat GPU buffers, CPU readback/upload disabled for real-time RIFE" << std::endl;
     return true;
 }
 
@@ -757,13 +721,6 @@ bool HelloTriangleApplication::captureSwapchainImageForRife(VkCommandBuffer comm
         return false;
     }
 
-    static bool loggedCapturePath = false;
-    if (!loggedCapturePath) {
-        std::cout << "[RIFE][PATH] frame_capture=swapchain VkImage -> pipelined device-local GPU buffer ring"
-                  << std::endl;
-        loggedCapturePath = true;
-    }
-
     VkImageMemoryBarrier toTransferBarrier{};
     toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -1040,13 +997,6 @@ void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
         previousRifeGpuFrameIndex < frameCaptureBuffers.size();
 
     ++capturedFrameCount;
-
-    if (capturedFrameCount == 1) {
-        std::cout << "[RIFE] GPU frame processing setup: first device-local frame captured" << std::endl;
-    }
-    else if (capturedFrameCount == 2) {
-        std::cout << "[RIFE] GPU frame pair ready for inference" << std::endl;
-    }
 #endif
 
 }
@@ -1340,13 +1290,6 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
     const int inferenceW = std::min(inputW, std::max(32, inputW / divisor));
     const int inferenceH = std::min(inputH, std::max(32, inputH / divisor));
 
-    static bool loggedAsyncPath = false;
-    if (!loggedAsyncPath) {
-        std::cout << "[RIFE][PATH] async_inference=RIFE::process_v4_gpu"
-                  << " (submitted after present; render loop continues while ncnn runs)" << std::endl;
-        loggedAsyncPath = true;
-    }
-
     rifeInferenceInFlight = true;
     asyncRifePrevFrameIndex = prevIndex;
     asyncRifeCurrFrameIndex = currIndex;
@@ -1502,7 +1445,6 @@ void HelloTriangleApplication::drawFrame() {
             !rifeInferenceInFlight &&
             !hasRifeDisplayFrame &&
             !rifeInferenceRequestWaitingForFramePair) {
-            std::cout << "[RIFE] waiting for frame pair before running interpolation" << std::endl;
             rifeInferenceRequestWaitingForFramePair = true;
         }
     }

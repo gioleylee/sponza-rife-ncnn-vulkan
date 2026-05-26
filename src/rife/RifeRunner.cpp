@@ -97,8 +97,6 @@ bool RifeRunner::initialize(ncnn::Net& targetNet,
     rifeEngine = std::move(engine);
     loadedParamPath = paramPath;
     loadedBinPath = binPath;
-    std::cout << "[RIFE] model loaded for shared renderer VkDevice GPU path: "
-              << loadedParamPath << " + " << loadedBinPath << std::endl;
     return true;
 }
 

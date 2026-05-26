@@ -1,0 +1,79 @@
+// rife implemented with ncnn library
+
+#version 450
+
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+
+#if NCNN_int8_storage
+#extension GL_EXT_shader_8bit_storage: require
+#endif
+
+layout (constant_id = 0) const int bgr = 0;
+
+layout (binding = 0) readonly buffer bottom_blob { sfp bottom_blob_data[]; };
+#if NCNN_int8_storage
+layout (binding = 1) writeonly buffer top_blob { uint8_t top_blob_data[]; };
+#else
+layout (binding = 1) writeonly buffer top_blob { float top_blob_data[]; };
+#endif
+
+layout (push_constant) uniform parameter
+{
+    int w;
+    int h;
+    int cstep;
+
+    int outw;
+    int outh;
+    int outcstep;
+
+    int srcw;
+    int srch;
+    int inferw;
+    int inferh;
+} p;
+
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+
+    if (gx >= p.outw || gy >= p.outh || gz >= 3)
+        return;
+
+    int inferw = p.inferw > 0 ? p.inferw : p.outw;
+    int inferh = p.inferh > 0 ? p.inferh : p.outh;
+    int sx = int((float(gx) + 0.5f) * float(inferw) / float(p.outw));
+    int sy = int((float(gy) + 0.5f) * float(inferh) / float(p.outh));
+    sx = clamp(sx, 0, inferw - 1);
+    sy = clamp(sy, 0, inferh - 1);
+
+    float v = float(bottom_blob_data[gz * p.cstep + sy * p.w + sx]);
+
+    const float denorm_val = 255.f;
+    const float clip_eps = 0.5f;
+
+    v = v * denorm_val + clip_eps;
+
+#if NCNN_int8_storage
+    int v_offset = gy * p.outw + gx;
+    int pixel_stride = p.outcstep == p.outw * p.outh ? 3 : p.outcstep;
+
+    uint v32 = clamp(uint(floor(v)), 0, 255);
+
+    if (bgr == 0)
+        top_blob_data[v_offset * pixel_stride + gz] = uint8_t(v32);
+    else
+        top_blob_data[v_offset * pixel_stride + 2 - gz] = uint8_t(v32);
+
+    if (pixel_stride >= 4 && gz == 0)
+        top_blob_data[v_offset * pixel_stride + 3] = uint8_t(255);
+#else
+    int v_offset = gz * p.outcstep + gy * p.outw + gx;
+
+    top_blob_data[v_offset] = v;
+#endif
+}

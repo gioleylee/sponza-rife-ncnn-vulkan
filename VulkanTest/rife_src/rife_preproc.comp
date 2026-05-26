@@ -1,0 +1,82 @@
+// rife implemented with ncnn library
+
+#version 450
+
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+
+#if NCNN_int8_storage
+#extension GL_EXT_shader_8bit_storage: require
+#endif
+
+layout (constant_id = 0) const int bgr = 0;
+
+#if NCNN_int8_storage
+layout (binding = 0) readonly buffer bottom_blob { uint8_t bottom_blob_data[]; };
+#else
+layout (binding = 0) readonly buffer bottom_blob { float bottom_blob_data[]; };
+#endif
+layout (binding = 1) writeonly buffer top_blob { sfp top_blob_data[]; };
+
+layout (push_constant) uniform parameter
+{
+    int w;
+    int h;
+    int cstep;
+
+    int outw;
+    int outh;
+    int outcstep;
+
+    int srcw;
+    int srch;
+    int inferw;
+    int inferh;
+} p;
+
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+
+    if (gx >= p.outw || gy >= p.outh || gz >= 3)
+        return;
+
+    int inferw = p.inferw > 0 ? p.inferw : p.outw;
+    int inferh = p.inferh > 0 ? p.inferh : p.outh;
+    int srcw = p.srcw > 0 ? p.srcw : p.w;
+    int srch = p.srch > 0 ? p.srch : p.h;
+
+    if (gx < 0 || gx >= inferw || gy < 0 || gy >= inferh)
+    {
+        top_blob_data[gz * p.outcstep + gy * p.outw + gx] = sfp(0.f);
+        return;
+    }
+
+    int sx = int((float(gx) + 0.5f) * float(srcw) / float(inferw));
+    int sy = int((float(gy) + 0.5f) * float(srch) / float(inferh));
+    sx = clamp(sx, 0, srcw - 1);
+    sy = clamp(sy, 0, srch - 1);
+
+#if NCNN_int8_storage
+    int v_offset = sy * p.w + sx;
+    int pixel_stride = p.cstep == p.w * p.h ? 3 : p.cstep;
+
+    float v;
+
+    if (bgr == 0)
+        v = float(uint(bottom_blob_data[v_offset * pixel_stride + gz]));
+    else
+        v = float(uint(bottom_blob_data[v_offset * pixel_stride + 2 - gz]));
+#else
+    int v_offset = gz * p.cstep + sy * p.w + sx;
+
+    float v = bottom_blob_data[v_offset];
+#endif
+
+    const float norm_val = 1 / 255.f;
+
+    top_blob_data[gz * p.outcstep + gy * p.outw + gx] = sfp(v * norm_val);
+}

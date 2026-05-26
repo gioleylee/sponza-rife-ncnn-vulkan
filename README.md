@@ -29,14 +29,20 @@ The goal of this project is to build a rendering pipeline and understand the mec
 
 ### Build Instructions
 
-#### Using Visual Studio
-1. Open `.sln` file
-2. Build solution
-3. Run project
+#### Using CMake (recommended)
+Dependencies are resolved through CMake packages (`Vulkan`, `glfw3`, `glm`, `assimp`).
 
-#### Using CMake
+Set one of the following to the folder containing `stb_image.h`:
+- `STB_INCLUDE_DIR` (CMake variable), or
+- `STB_DIR` (environment variable)
+
+Optional ncnn support:
+- Set `NCNN_DIR` to your ncnn install root (contains `include` and `lib`).
+
 ```bash
-mkdir build
-cd build
-cmake ..
-cmake --build .
+cmake -S . -B build -DSTB_INCLUDE_DIR="C:/path/to/stb"
+cmake --build build --config Release
+```
+
+In Visual Studio, open the repository folder directly to use CMake project mode.
+"# sponza-rife-ncnn-vulkan" 

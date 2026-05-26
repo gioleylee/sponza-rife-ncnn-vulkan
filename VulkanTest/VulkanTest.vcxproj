@@ -81,6 +81,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -96,6 +97,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -109,7 +111,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)rife_src;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -130,7 +132,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)rife_src;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -143,19 +145,19 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\rife\RifeRunner.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="RenderResources.cpp" />
-    <ClCompile Include="VulkanBuffers.cpp" />
-    <ClCompile Include="VulkanDevice.cpp" />
-    <ClCompile Include="VulkanPipeline.cpp" />
-    <ClCompile Include="WindowInput.cpp" />
-    <ClCompile Include="validation_layers.cpp" />
-    <ClCompile Include="rife_src\rife.cpp">
+    <ClCompile Include="src\rife\RifeRunner.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\app\RenderResources.cpp" />
+    <ClCompile Include="src\app\VulkanBuffers.cpp" />
+    <ClCompile Include="src\app\VulkanDevice.cpp" />
+    <ClCompile Include="src\app\VulkanPipeline.cpp" />
+    <ClCompile Include="src\platform\WindowInput.cpp" />
+    <ClCompile Include="src\platform\validation_layers.cpp" />
+    <ClCompile Include="third_party\rife\rife.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="rife_src\warp.cpp">
+    <ClCompile Include="third_party\rife\warp.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
     </ClCompile>
@@ -169,12 +171,12 @@
     <None Include="shaders\shader.vert" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\rife\RifeRunner.h" />
-    <ClInclude Include="AppTypes.h" />
-    <ClInclude Include="HelloTriangleApplication.h" />
-    <ClInclude Include="WindowInput.h" />
-    <ClInclude Include="rife_src\rife.h" />
-    <ClInclude Include="validation_layers.h" />
+    <ClInclude Include="include\app\AppTypes.h" />
+    <ClInclude Include="include\app\HelloTriangleApplication.h" />
+    <ClInclude Include="include\app\RifeRunner.h" />
+    <ClInclude Include="include\platform\WindowInput.h" />
+    <ClInclude Include="include\platform\validation_layers.h" />
+    <ClInclude Include="third_party\rife\rife.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

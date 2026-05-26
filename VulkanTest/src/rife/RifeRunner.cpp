@@ -2,7 +2,7 @@
 
 #if HAS_NCNN
 
-#include "../../VulkanTest/rife_src/rife_ops.h"
+#include "rife_ops.h"
 
 #include <filesystem>
 #include <iostream>

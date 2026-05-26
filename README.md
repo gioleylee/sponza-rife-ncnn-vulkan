@@ -6,13 +6,22 @@ This project is a Vulkan-based Sponza renderer with real-time frame interpolatio
 
 ---
 
+### Controls
+- Key Inputs:
+  - "R": Toggle Frame Interpolation (ON/OFF)
+  - "T": Auto-rotate Camera (ON/OFF)
+  - "1": Speeds up auto-rotate (if enabled)
+  - "2": Slows down auto-rotate (if enabled)
+
 ### Required Tools
 
 - Visual Studio
-  - Install the **Desktop development with C++** workload
+  - **Desktop development with C++**
 - Windows SDK
 - Vulkan SDK
-  - Make sure the `VULKAN_SDK` environment variable is set
+  - `VULKAN_SDK` set environment variable
+- NCNN
+  - Setup given in ncnn_setup.md
 
 ---
 
@@ -23,7 +32,9 @@ C/C++ > General > Additional Include Directories
  - GLM include
  - GLFW include
  - Assimp include
- - $(ProjectDir)rife_src
+ - $(ProjectDir)include\app
+ - $(ProjectDir)include\platform
+ - $(ProjectDir)third_party\rife
 
 Linker > General > Additional Library Directories
  - GLFW lib
@@ -39,8 +50,5 @@ Linker > Input > Additional Dependencies
  - SPIRV-Toolsd.lib
  - SPIRV-Tools-optd.lib
  - assimp-vc143-mt.lib
-
-Build Events > Post-Build Event
- - Copy Assimp DLL to output directory.
 
 RIFE model files are loaded from `VulkanTest/assets/models/rife-v4`.

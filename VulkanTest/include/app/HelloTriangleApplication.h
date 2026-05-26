@@ -41,14 +41,14 @@
 #include <windows.h>
 #endif
 
-#include "rife_src/rife.h"
+#include "rife.h"
 
 #if __has_include(<ncnn/net.h>) && __has_include(<ncnn/gpu.h>) && __has_include(<ncnn/layer.h>)
 #include <ncnn/net.h>
 #include <ncnn/gpu.h>
 #include <ncnn/allocator.h>
 #include <ncnn/layer.h>
-#include "rife_src/rife_ops.h"
+#include "rife_ops.h"
 #define HAS_NCNN 1
 #else
 #define HAS_NCNN 0
@@ -56,13 +56,13 @@
 
 #if HAS_NCNN && defined(HAS_WARP_VK_SHADER)
 #define HAS_RIFE_WARP_VK HAS_WARP_VK_SHADER
-#elif __has_include("rife_src/warp.comp.hex.h") && __has_include("rife_src/warp_pack4.comp.hex.h") && __has_include("rife_src/warp_pack8.comp.hex.h")
+#elif __has_include("warp.comp.hex.h") && __has_include("warp_pack4.comp.hex.h") && __has_include("warp_pack8.comp.hex.h")
 #define HAS_RIFE_WARP_VK 1
 #else
 #define HAS_RIFE_WARP_VK 0
 #endif
 
-#include "../src/rife/RifeRunner.h"
+#include "RifeRunner.h"
 
 #include "AppTypes.h"
 #include "validation_layers.h"

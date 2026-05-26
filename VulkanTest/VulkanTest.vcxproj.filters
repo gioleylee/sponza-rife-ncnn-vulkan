@@ -13,37 +13,55 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\App">
+      <UniqueIdentifier>{B59AC588-2B79-4976-BDB3-9618E74674CE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Platform">
+      <UniqueIdentifier>{88DE2760-7FA7-40FE-91F4-6CD00C3DC903}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\RIFE">
+      <UniqueIdentifier>{01CB081D-0D40-4828-BBA8-9321AF01EA3D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\App">
+      <UniqueIdentifier>{C39F3C18-D7C7-426E-9947-971393C950E4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Platform">
+      <UniqueIdentifier>{1D7FFACF-619F-41E0-9E11-7E239425C8E2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Third Party\RIFE">
+      <UniqueIdentifier>{8F08E9CB-E54A-4864-AF4B-DFDC9FC2AA07}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\rife\RifeRunner.cpp">
+    <ClCompile Include="src\rife\RifeRunner.cpp">
+      <Filter>Source Files\RIFE</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="main.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\app\RenderResources.cpp">
+      <Filter>Source Files\App</Filter>
     </ClCompile>
-    <ClCompile Include="RenderResources.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\app\VulkanBuffers.cpp">
+      <Filter>Source Files\App</Filter>
     </ClCompile>
-    <ClCompile Include="VulkanBuffers.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\app\VulkanDevice.cpp">
+      <Filter>Source Files\App</Filter>
     </ClCompile>
-    <ClCompile Include="VulkanDevice.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\app\VulkanPipeline.cpp">
+      <Filter>Source Files\App</Filter>
     </ClCompile>
-    <ClCompile Include="VulkanPipeline.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\platform\WindowInput.cpp">
+      <Filter>Source Files\Platform</Filter>
     </ClCompile>
-    <ClCompile Include="WindowInput.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\platform\validation_layers.cpp">
+      <Filter>Source Files\Platform</Filter>
     </ClCompile>
-    <ClCompile Include="validation_layers.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="third_party\rife\rife.cpp">
+      <Filter>Third Party\RIFE</Filter>
     </ClCompile>
-    <ClCompile Include="rife_src\rife.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="rife_src\warp.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="third_party\rife\warp.cpp">
+      <Filter>Third Party\RIFE</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -65,23 +83,23 @@
     <None Include="ncnn_setup.md" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\rife\RifeRunner.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\app\RifeRunner.h">
+      <Filter>Header Files\App</Filter>
     </ClInclude>
-    <ClInclude Include="HelloTriangleApplication.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\app\HelloTriangleApplication.h">
+      <Filter>Header Files\App</Filter>
     </ClInclude>
-    <ClInclude Include="WindowInput.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\platform\WindowInput.h">
+      <Filter>Header Files\Platform</Filter>
     </ClInclude>
-    <ClInclude Include="validation_layers.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\platform\validation_layers.h">
+      <Filter>Header Files\Platform</Filter>
     </ClInclude>
-    <ClInclude Include="rife_src\rife.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="third_party\rife\rife.h">
+      <Filter>Third Party\RIFE</Filter>
     </ClInclude>
-    <ClInclude Include="AppTypes.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="include\app\AppTypes.h">
+      <Filter>Header Files\App</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

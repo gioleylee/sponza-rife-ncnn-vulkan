@@ -22,7 +22,7 @@
 #endif
 
 #if HAS_NCNN
-#include "../../VulkanTest/rife_src/rife.h"
+#include "rife.h"
 
 class RifeRunner {
 public:

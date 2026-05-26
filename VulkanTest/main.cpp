@@ -595,6 +595,9 @@ void HelloTriangleApplication::createFrameProcessingResources() {
     rifeDisplayBufferSize = frameSize;
     hasRifeDisplayFrame = false;
     nextRifeOutputSequence = 1;
+    rifePendingInterpolatedOutputIndex = UINT32_MAX;
+    rifePendingSourceDisplayIndex = UINT32_MAX;
+    rifeHeldSourceDisplayIndex = UINT32_MAX;
 
     for (auto& capture : frameCaptureBuffers) {
         createBuffer(
@@ -663,6 +666,9 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
     rifeDisplayBufferSize = 0;
     hasRifeDisplayFrame = false;
     nextRifeOutputSequence = 1;
+    rifePendingInterpolatedOutputIndex = UINT32_MAX;
+    rifePendingSourceDisplayIndex = UINT32_MAX;
+    rifeHeldSourceDisplayIndex = UINT32_MAX;
 #if HAS_NCNN
     rifeInferenceInFlight = false;
     asyncRifePrevFrameIndex = UINT32_MAX;
@@ -714,6 +720,12 @@ uint32_t HelloTriangleApplication::findAvailableRifeCaptureSlot() const {
         }
 #endif
         if (slot == currentRifeGpuFrameIndex) {
+            continue;
+        }
+        if (slot == rifePendingSourceDisplayIndex) {
+            continue;
+        }
+        if (slot == rifeHeldSourceDisplayIndex) {
             continue;
         }
 
@@ -840,38 +852,11 @@ bool HelloTriangleApplication::captureSwapchainImageForRife(VkCommandBuffer comm
     return true;
 }
 
-void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    if (!hasRifeDisplayFrame || rifeOutputBuffers.empty()) {
-        return;
-    }
-
-    uint32_t outputIndex = UINT32_MAX;
-    uint64_t newestSequence = 0;
-    for (uint32_t i = 0; i < rifeOutputBuffers.size(); ++i) {
-        const auto& output = rifeOutputBuffers[i];
-        if (output.ready && !output.inUseByGraphics && output.sequence >= newestSequence) {
-            outputIndex = i;
-            newestSequence = output.sequence;
-        }
-    }
-
-    if (outputIndex == UINT32_MAX) {
-        hasRifeDisplayFrame = false;
-        for (const auto& output : rifeOutputBuffers) {
-            if (output.ready) {
-                hasRifeDisplayFrame = true;
-                break;
-            }
-        }
-        return;
-    }
-
-    auto& selectedOutput = rifeOutputBuffers[outputIndex];
-    if (selectedOutput.gpuBuffer == VK_NULL_HANDLE || selectedOutput.size == 0) {
-        selectedOutput.ready = false;
-        return;
-    }
-
+void HelloTriangleApplication::copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
+                                                         uint32_t imageIndex,
+                                                         VkBuffer sourceBuffer,
+                                                         VkAccessFlags sourceAccessMask,
+                                                         VkPipelineStageFlags sourceStageMask) {
     VkImageMemoryBarrier toTransferDstBarrier{};
     toTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     toTransferDstBarrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -902,17 +887,17 @@ void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer comma
 
     VkBufferMemoryBarrier rifeOutputBarrier{};
     rifeOutputBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    rifeOutputBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    rifeOutputBarrier.srcAccessMask = sourceAccessMask;
     rifeOutputBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     rifeOutputBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     rifeOutputBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    rifeOutputBarrier.buffer = selectedOutput.gpuBuffer;
+    rifeOutputBarrier.buffer = sourceBuffer;
     rifeOutputBarrier.offset = 0;
     rifeOutputBarrier.size = VK_WHOLE_SIZE;
 
     vkCmdPipelineBarrier(
         commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        sourceStageMask,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         0,
         0,
@@ -936,7 +921,7 @@ void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer comma
 
     vkCmdCopyBufferToImage(
         commandBuffer,
-        selectedOutput.gpuBuffer,
+        sourceBuffer,
         swapChainImages[imageIndex],
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1,
@@ -970,18 +955,69 @@ void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer comma
         1,
         &backToPresentBarrier
     );
+}
+
+void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    if (!hasRifeDisplayFrame ||
+        rifePendingInterpolatedOutputIndex >= rifeOutputBuffers.size() ||
+        rifeOutputBuffers.empty()) {
+        return;
+    }
+
+    auto& selectedOutput = rifeOutputBuffers[rifePendingInterpolatedOutputIndex];
+    if (!selectedOutput.ready ||
+        selectedOutput.inUseByGraphics ||
+        selectedOutput.gpuBuffer == VK_NULL_HANDLE ||
+        selectedOutput.size == 0) {
+        hasRifeDisplayFrame = false;
+        rifePendingInterpolatedOutputIndex = UINT32_MAX;
+        return;
+    }
+
+    copyRifeBufferToSwapchain(
+        commandBuffer,
+        imageIndex,
+        selectedOutput.gpuBuffer,
+        VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+    );
 
     selectedOutput.ready = false;
     selectedOutput.inUseByGraphics = true;
     selectedOutput.graphicsFrameSlot = currentFrame;
 
     hasRifeDisplayFrame = false;
-    for (auto& output : rifeOutputBuffers) {
-        if (output.ready && output.sequence < newestSequence) {
-            output.ready = false;
-        }
-        hasRifeDisplayFrame = hasRifeDisplayFrame || output.ready;
+    rifePendingInterpolatedOutputIndex = UINT32_MAX;
+    rifeHeldSourceDisplayIndex = UINT32_MAX;
+}
+
+void HelloTriangleApplication::displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex) {
+    if (sourceIndex >= frameCaptureBuffers.size()) {
+        return;
     }
+
+    const auto& source = frameCaptureBuffers[sourceIndex];
+    if (source.gpuBuffer == VK_NULL_HANDLE || source.size == 0) {
+        return;
+    }
+
+    copyRifeBufferToSwapchain(
+        commandBuffer,
+        imageIndex,
+        source.gpuBuffer,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT
+    );
+}
+
+void HelloTriangleApplication::displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    if (rifePendingSourceDisplayIndex >= frameCaptureBuffers.size()) {
+        rifePendingSourceDisplayIndex = UINT32_MAX;
+        return;
+    }
+
+    displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, rifePendingSourceDisplayIndex);
+    rifePendingSourceDisplayIndex = UINT32_MAX;
 }
 
 void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
@@ -1044,6 +1080,26 @@ uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBu
 
     if (mode == PresentationCommandMode::DisplayInterpolatedFrame) {
         displayRifeFrameOnSwapchain(commandBuffer, imageIndex);
+
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
+
+        return UINT32_MAX;
+    }
+
+    if (mode == PresentationCommandMode::DisplayCapturedSourceFrame) {
+        displayCapturedRifeSourceOnSwapchain(commandBuffer, imageIndex);
+
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
+
+        return UINT32_MAX;
+    }
+
+    if (mode == PresentationCommandMode::DisplayHeldSourceFrame) {
+        displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, rifeHeldSourceDisplayIndex);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -1158,6 +1214,26 @@ uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBu
     const bool capturedForRife = captureSlot != UINT32_MAX &&
         captureSwapchainImageForRife(commandBuffer, imageIndex, captureSlot);
 
+#if HAS_NCNN
+    if (rifeRealtimeInterpolationEnabled &&
+        capturedForRife &&
+        currentRifeGpuFrameIndex < frameCaptureBuffers.size() &&
+        !rifeInferenceInFlight &&
+        !hasRifeDisplayFrame &&
+        rifePendingSourceDisplayIndex == UINT32_MAX) {
+        const auto& previousSource = frameCaptureBuffers[currentRifeGpuFrameIndex];
+        if (previousSource.gpuBuffer != VK_NULL_HANDLE && previousSource.size != 0) {
+            copyRifeBufferToSwapchain(
+                commandBuffer,
+                imageIndex,
+                previousSource.gpuBuffer,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT
+            );
+        }
+    }
+#endif
+
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");
     }
@@ -1203,6 +1279,9 @@ void HelloTriangleApplication::waitForAsyncRifeInference() {
     }
 
     rifeInferenceInFlight = false;
+    rifePendingInterpolatedOutputIndex = UINT32_MAX;
+    rifePendingSourceDisplayIndex = UINT32_MAX;
+    rifeHeldSourceDisplayIndex = UINT32_MAX;
     asyncRifePrevFrameIndex = UINT32_MAX;
     asyncRifeCurrFrameIndex = UINT32_MAX;
     asyncRifeOutputIndex = UINT32_MAX;
@@ -1244,6 +1323,8 @@ void HelloTriangleApplication::pollAsyncRifeInference() {
 
         rifeOutputBuffers[result.outputIndex].ready = true;
         rifeOutputBuffers[result.outputIndex].sequence = nextRifeOutputSequence++;
+        rifePendingInterpolatedOutputIndex = result.outputIndex;
+        rifePendingSourceDisplayIndex = result.currentSourceIndex;
         hasRifeDisplayFrame = true;
         if (previousDivisor != rifeInferenceScaleDivisor || (rifeCompletedInferenceCount % 120) == 1) {
             std::cout << "[RIFE] async inference"
@@ -1315,6 +1396,7 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
     rifeOutputBuffers[outputIndex].ready = false;
     rifeOutputBuffers[outputIndex].sequence = 0;
     hasRifeGpuFramePair = false;
+    rifeHeldSourceDisplayIndex = prevIndex;
     rifeInferenceRequestWaitingForFramePair = false;
 
     asyncRifeInference = std::async(std::launch::async, [this,
@@ -1327,6 +1409,7 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
                                                          inputH,
                                                          inferenceW,
                                                          inferenceH,
+                                                         currIndex,
                                                          outputIndex]() {
         AsyncRifeResult result{};
         result.inputW = inputW;
@@ -1334,6 +1417,7 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
         result.inferenceW = inferenceW;
         result.inferenceH = inferenceH;
         result.outputIndex = outputIndex;
+        result.currentSourceIndex = currIndex;
 
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         const auto start = std::chrono::high_resolution_clock::now();
@@ -1489,6 +1573,15 @@ void HelloTriangleApplication::drawFrame() {
 #if HAS_NCNN
     if (rifeRealtimeInterpolationEnabled && hasRifeDisplayFrame) {
         mode = PresentationCommandMode::DisplayInterpolatedFrame;
+    }
+    else if (rifeRealtimeInterpolationEnabled &&
+             rifePendingSourceDisplayIndex < frameCaptureBuffers.size()) {
+        mode = PresentationCommandMode::DisplayCapturedSourceFrame;
+    }
+    else if (rifeRealtimeInterpolationEnabled &&
+             rifeInferenceInFlight &&
+             rifeHeldSourceDisplayIndex < frameCaptureBuffers.size()) {
+        mode = PresentationCommandMode::DisplayHeldSourceFrame;
     }
 #endif
 

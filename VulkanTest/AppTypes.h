@@ -128,11 +128,14 @@ struct AsyncRifeResult {
     int inferenceW = 0;
     int inferenceH = 0;
     uint32_t outputIndex = UINT32_MAX;
+    uint32_t currentSourceIndex = UINT32_MAX;
 };
 
 enum class PresentationCommandMode {
     RenderFrame,
-    DisplayInterpolatedFrame
+    DisplayInterpolatedFrame,
+    DisplayCapturedSourceFrame,
+    DisplayHeldSourceFrame
 };
 
 struct Material {

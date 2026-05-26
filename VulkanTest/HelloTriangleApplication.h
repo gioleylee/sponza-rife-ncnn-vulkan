@@ -165,6 +165,9 @@ private:
     VkDeviceSize rifeDisplayBufferSize = 0;
     bool hasRifeDisplayFrame = false;
     uint64_t nextRifeOutputSequence = 1;
+    uint32_t rifePendingInterpolatedOutputIndex = UINT32_MAX;
+    uint32_t rifePendingSourceDisplayIndex = UINT32_MAX;
+    uint32_t rifeHeldSourceDisplayIndex = UINT32_MAX;
 #if HAS_NCNN
     std::future<AsyncRifeResult> asyncRifeInference;
     bool rifeInferenceInFlight = false;
@@ -327,7 +330,17 @@ private:
 
     bool captureSwapchainImageForRife(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t captureSlot);
 
+    void copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
+                                   uint32_t imageIndex,
+                                   VkBuffer sourceBuffer,
+                                   VkAccessFlags sourceAccessMask,
+                                   VkPipelineStageFlags sourceStageMask);
+
     void displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
+    void displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex);
+
+    void displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     void processCapturedFrameForSlot(uint32_t frameSlot);
 

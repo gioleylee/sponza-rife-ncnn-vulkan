@@ -96,6 +96,9 @@ void HelloTriangleApplication::processInput(float deltaTime) {
             rifeInferenceRequestWaitingForFramePair = false;
             hasRifeGpuFramePair = false;
             hasRifeDisplayFrame = false;
+            rifePendingInterpolatedOutputIndex = UINT32_MAX;
+            rifePendingSourceDisplayIndex = UINT32_MAX;
+            rifeHeldSourceDisplayIndex = UINT32_MAX;
             for (auto& output : rifeOutputBuffers) {
                 output.ready = false;
                 output.inUseByInference = false;

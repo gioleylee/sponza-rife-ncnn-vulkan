@@ -19,8 +19,8 @@ inline constexpr uint32_t HEIGHT = 720;
 
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 inline constexpr int RIFE_INITIAL_INFERENCE_SCALE_DIVISOR = 4;
-inline constexpr int RIFE_MIN_INFERENCE_SCALE_DIVISOR = 2;
-inline constexpr int RIFE_MAX_INFERENCE_SCALE_DIVISOR = 6;
+inline constexpr int RIFE_MIN_INFERENCE_SCALE_DIVISOR = 4;
+inline constexpr int RIFE_MAX_INFERENCE_SCALE_DIVISOR = 4;
 inline constexpr double RIFE_TARGET_INFERENCE_MS = 10.0;
 inline constexpr double RIFE_FAST_INFERENCE_MS = 6.0;
 inline constexpr uint32_t RIFE_CAPTURE_BUFFER_COUNT = 4;

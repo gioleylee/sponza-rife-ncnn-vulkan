@@ -33,6 +33,7 @@
 #include <memory>
 #include <string>
 #include <future>
+#include <mutex>
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -84,6 +85,7 @@ private:
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     VkQueue presentQueue = VK_NULL_HANDLE;
     VkQueue computeQueue = VK_NULL_HANDLE;
+    std::mutex vulkanQueueMutex;
 #if defined(_WIN32)
     PFN_vkGetMemoryWin32HandleKHR vkGetMemoryWin32HandleKHRFn = nullptr;
 #endif

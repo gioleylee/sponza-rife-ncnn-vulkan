@@ -170,6 +170,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\rife\RifeRunner.h" />
+    <ClInclude Include="AppTypes.h" />
     <ClInclude Include="HelloTriangleApplication.h" />
     <ClInclude Include="WindowInput.h" />
     <ClInclude Include="rife_src\rife.h" />

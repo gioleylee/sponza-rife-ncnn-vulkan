@@ -154,15 +154,31 @@ int HelloTriangleApplication::findNcnnDeviceIndexForRenderer() const {
     vkGetPhysicalDeviceProperties(physicalDevice, &rendererProperties);
 
     const int gpuCount = ncnn::get_gpu_count();
+    int vendorMatch = -1;
     for (int i = 0; i < gpuCount; ++i) {
         const ncnn::GpuInfo& gpuInfo = ncnn::get_gpu_info(i);
+
         if (gpuInfo.vendor_id() == rendererProperties.vendorID &&
-            gpuInfo.device_id() == rendererProperties.deviceID &&
-            std::strcmp(gpuInfo.device_name(), rendererProperties.deviceName) == 0) {
+            gpuInfo.device_id() == rendererProperties.deviceID) {
+            if (std::strcmp(gpuInfo.device_name(), rendererProperties.deviceName) != 0) {
+                std::cout << "[NCNN] matched renderer GPU by vendor/device id: "
+                          << rendererProperties.deviceName << " -> index " << i << std::endl;
+            }
             return i;
+        }
+
+        if (vendorMatch < 0 && gpuInfo.vendor_id() == rendererProperties.vendorID) {
+            vendorMatch = i;
         }
     }
 
+    if (vendorMatch >= 0) {
+        std::cout << "[NCNN] exact renderer GPU id not found; using same-vendor GPU index "
+                  << vendorMatch << " for " << rendererProperties.deviceName << std::endl;
+        return vendorMatch;
+    }
+
+    std::cout << "[NCNN] renderer GPU was not found in NCNN's Vulkan list; falling back to index 0" << std::endl;
     return gpuCount > 0 ? 0 : -1;
 }
 
@@ -176,6 +192,7 @@ void HelloTriangleApplication::initNcnn() {
     const int gpuCount = ncnn::get_gpu_count();
     ncnnRendererDeviceIndex = findNcnnDeviceIndexForRenderer();
     net.opt.use_vulkan_compute = gpuCount > 0 && HAS_RIFE_WARP_VK;
+    net.opt.use_cooperative_matrix = false;
     net.opt.use_packing_layout = false;
     net.opt.num_threads = 1;
     if (gpuCount > 0 && !HAS_RIFE_WARP_VK) {
@@ -1318,6 +1335,7 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
         result.inferenceH = inferenceH;
         result.outputIndex = outputIndex;
 
+        std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         const auto start = std::chrono::high_resolution_clock::now();
         result.processRet = rifeRunner.processGpuRgbaFrames(
             prevGpu.gpuBuffer,
@@ -1414,7 +1432,12 @@ void HelloTriangleApplication::drawFrame() {
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[frameSlot]) != VK_SUCCESS) {
+        VkResult submitResult = VK_SUCCESS;
+        {
+            std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
+            submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[frameSlot]);
+        }
+        if (submitResult != VK_SUCCESS) {
             throw std::runtime_error("failed to submit draw command buffer!");
         }
 
@@ -1433,6 +1456,7 @@ void HelloTriangleApplication::drawFrame() {
         presentInfo.pSwapchains = swapChains;
         presentInfo.pImageIndices = &imageIndex;
 
+        std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         return vkQueuePresentKHR(presentQueue, &presentInfo);
     };
 
@@ -1698,8 +1722,11 @@ void HelloTriangleApplication::endSingleTimeCommands(VkCommandBuffer commandBuff
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
+    {
+        std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
+        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue);
+    }
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }

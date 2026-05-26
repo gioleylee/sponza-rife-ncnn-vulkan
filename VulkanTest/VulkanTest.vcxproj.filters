@@ -39,6 +39,12 @@
     <ClCompile Include="validation_layers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="rife_src\rife.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rife_src\warp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\shader.frag">
@@ -70,6 +76,12 @@
     </ClInclude>
     <ClInclude Include="validation_layers.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rife_src\rife.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AppTypes.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

@@ -69,38 +69,66 @@ void HelloTriangleApplication::pickPhysicalDevice() {
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
+    VkPhysicalDevice firstSuitableDevice = VK_NULL_HANDLE;
     for (const auto& device : devices) {
-        if (isDeviceSuitable(device)) {
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(device, &properties);
+        const bool suitable = isDeviceSuitable(device);
+
+        if (!suitable) {
+            continue;
+        }
+
+        if (firstSuitableDevice == VK_NULL_HANDLE) {
+            firstSuitableDevice = device;
+        }
+
+        if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             physicalDevice = device;
             break;
         }
     }
 
     if (physicalDevice == VK_NULL_HANDLE) {
+        physicalDevice = firstSuitableDevice;
+    }
+
+    if (physicalDevice == VK_NULL_HANDLE) {
         throw std::runtime_error("failed to find a suitable GPU!");
     }
+
+    VkPhysicalDeviceProperties selectedProperties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &selectedProperties);
+    std::cout << "[Vulkan] selected GPU: " << selectedProperties.deviceName
+              << " (vendor=0x" << std::hex << selectedProperties.vendorID
+              << ", device=0x" << selectedProperties.deviceID << std::dec
+              << ", type=" << selectedProperties.deviceType << ")"
+              << std::endl;
 }
 
 void HelloTriangleApplication::createLogicalDevice() {
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = {
-        indices.graphicsFamily.value(),
-        indices.presentFamily.value(),
-        indices.computeFamily.value()
-    };
-    if (indices.transferFamily.has_value()) {
-        uniqueQueueFamilies.insert(indices.transferFamily.value());
-    }
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilyProperties.data());
 
-    float queuePriority = 1.0f;
-    for (uint32_t queueFamily : uniqueQueueFamilies) {
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::vector<std::vector<float>> queuePriorities(queueFamilyProperties.size());
+    for (uint32_t queueFamily = 0; queueFamily < queueFamilyProperties.size(); ++queueFamily) {
+        const uint32_t queueCount = queueFamilyProperties[queueFamily].queueCount;
+        if (queueCount == 0) {
+            continue;
+        }
+
+        queuePriorities[queueFamily].assign(queueCount, 1.0f);
+
         VkDeviceQueueCreateInfo queueCreateInfo{};
         queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfo.queueCount = queueCount;
+        queueCreateInfo.pQueuePriorities = queuePriorities[queueFamily].data();
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
@@ -165,6 +193,10 @@ void HelloTriangleApplication::createLogicalDevice() {
     enabled16BitStorageFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES;
     VkPhysicalDeviceFloat16Int8FeaturesKHR enabledFloat16Int8Features{};
     enabledFloat16Int8Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES_KHR;
+    VkPhysicalDeviceVulkanMemoryModelFeatures enabledVulkanMemoryModelFeatures{};
+    enabledVulkanMemoryModelFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES;
+    VkPhysicalDeviceCooperativeMatrixFeaturesKHR enabledCooperativeMatrixFeatures{};
+    enabledCooperativeMatrixFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR;
     VkPhysicalDeviceSubgroupSizeControlFeatures enabledSubgroupSizeControlFeatures{};
     enabledSubgroupSizeControlFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES;
     VkPhysicalDeviceSubgroupSizeControlProperties subgroupSizeControlProperties{};
@@ -175,7 +207,9 @@ void HelloTriangleApplication::createLogicalDevice() {
     queriedFeatures2.pNext = &enabled8BitStorageFeatures;
     enabled8BitStorageFeatures.pNext = &enabled16BitStorageFeatures;
     enabled16BitStorageFeatures.pNext = &enabledFloat16Int8Features;
-    enabledFloat16Int8Features.pNext = &enabledSubgroupSizeControlFeatures;
+    enabledFloat16Int8Features.pNext = &enabledVulkanMemoryModelFeatures;
+    enabledVulkanMemoryModelFeatures.pNext = &enabledCooperativeMatrixFeatures;
+    enabledCooperativeMatrixFeatures.pNext = &enabledSubgroupSizeControlFeatures;
     vkGetPhysicalDeviceFeatures2(physicalDevice, &queriedFeatures2);
 
     VkPhysicalDeviceProperties2 queriedProperties2{};
@@ -197,6 +231,32 @@ void HelloTriangleApplication::createLogicalDevice() {
     else {
         enabledSubgroupSizeControlFeatures.subgroupSizeControl = VK_FALSE;
         enabledSubgroupSizeControlFeatures.computeFullSubgroups = VK_FALSE;
+    }
+
+    if (enabledVulkanMemoryModelFeatures.vulkanMemoryModel == VK_TRUE) {
+        enableOptionalDeviceExtension(VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME);
+        enabledVulkanMemoryModelFeatures.vulkanMemoryModelDeviceScope =
+            enabledVulkanMemoryModelFeatures.vulkanMemoryModelDeviceScope == VK_TRUE ? VK_TRUE : VK_FALSE;
+        enabledVulkanMemoryModelFeatures.vulkanMemoryModelAvailabilityVisibilityChains =
+            enabledVulkanMemoryModelFeatures.vulkanMemoryModelAvailabilityVisibilityChains == VK_TRUE ? VK_TRUE : VK_FALSE;
+        enabledVulkanMemoryModelFeatures.pNext = featureChain;
+        featureChain = &enabledVulkanMemoryModelFeatures;
+    }
+    else {
+        std::cout << "[Vulkan] selected GPU does not support vulkanMemoryModel; "
+                  << "NCNN shaders requiring it may fail validation" << std::endl;
+    }
+
+    if (enabledCooperativeMatrixFeatures.cooperativeMatrix == VK_TRUE) {
+        enableOptionalDeviceExtension(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+        enabledCooperativeMatrixFeatures.cooperativeMatrixRobustBufferAccess =
+            enabledCooperativeMatrixFeatures.cooperativeMatrixRobustBufferAccess == VK_TRUE ? VK_TRUE : VK_FALSE;
+        enabledCooperativeMatrixFeatures.pNext = featureChain;
+        featureChain = &enabledCooperativeMatrixFeatures;
+    }
+    else {
+        std::cout << "[Vulkan] selected GPU does not support cooperativeMatrix; "
+                  << "NCNN shaders requiring it may fail validation" << std::endl;
     }
 
     enabledFloat16Int8Features.pNext = featureChain;

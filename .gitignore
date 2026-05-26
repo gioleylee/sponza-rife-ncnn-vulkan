@@ -15,14 +15,7 @@ x86/
 build/
 out/
 
-# CMake
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-
 # Binaries
-*.obj
 *.exe
 *.dll
 *.lib
@@ -31,3 +24,12 @@ Makefile
 
 # Logs
 *.log
+
+# Build Obj
+**/x64/**/*.obj
+**/Debug/**/*.obj
+**/Release/**/*.obj
+**/out/**/*.obj
+
+# 3D model .obj files
+!**/assets/**/*.obj

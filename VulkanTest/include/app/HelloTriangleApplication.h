@@ -263,6 +263,8 @@ private:
     bool loadNcnnModel(const std::string& paramPath, const std::string& binPath);
 
     void tryLoadDefaultNcnnModel();
+
+    void applyNcnnVulkanOptions();
 #endif
 
     void recreateSwapChain();

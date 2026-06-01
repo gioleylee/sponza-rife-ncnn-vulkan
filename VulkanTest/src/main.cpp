@@ -222,6 +222,26 @@ int HelloTriangleApplication::findNcnnDeviceIndexForRenderer() const {
     return gpuCount > 0 ? 0 : -1;
 }
 
+void HelloTriangleApplication::applyNcnnVulkanOptions() {
+    const int gpuCount = ncnn::get_gpu_count();
+    const bool hasSelectedGpu =
+        ncnnRendererDeviceIndex >= 0 && ncnnRendererDeviceIndex < gpuCount;
+    const ncnn::GpuInfo* gpuInfo =
+        hasSelectedGpu ? &ncnn::get_gpu_info(ncnnRendererDeviceIndex) : nullptr;
+
+    net.opt.use_vulkan_compute = hasSelectedGpu && HAS_RIFE_WARP_VK;
+    net.opt.use_fp16_packed = true;
+    net.opt.use_fp16_storage = true;
+    net.opt.use_fp16_arithmetic = true;
+    net.opt.use_packing_layout = true;
+
+    net.opt.use_cooperative_matrix = true;
+
+    std::cout << "[NCNN] selected GPU: "
+              << (gpuInfo ? gpuInfo->device_name() : "<none>") << std::endl;
+    std::cout << "[NCNN] cooperative matrix: on" << std::endl;
+}
+
 void HelloTriangleApplication::initNcnn() {
     if (ncnnInitialized) {
         return;
@@ -231,9 +251,7 @@ void HelloTriangleApplication::initNcnn() {
 
     const int gpuCount = ncnn::get_gpu_count();
     ncnnRendererDeviceIndex = findNcnnDeviceIndexForRenderer();
-    net.opt.use_vulkan_compute = gpuCount > 0 && HAS_RIFE_WARP_VK;
-    net.opt.use_cooperative_matrix = false;
-    net.opt.use_packing_layout = false;
+    applyNcnnVulkanOptions();
     net.opt.num_threads = 1;
     if (gpuCount > 0 && !HAS_RIFE_WARP_VK) {
         std::cout << "[NCNN] rife warp vulkan shaders not found; forcing CPU inference path" << std::endl;
@@ -264,6 +282,10 @@ bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const
     if (!ncnnInitialized) {
         initNcnn();
     }
+
+    // NCNN consumes these options while loading the model and creating its
+    // Vulkan pipelines. Reapply them before every load.
+    applyNcnnVulkanOptions();
 
     if (!rifeRunner.initialize(net, paramPath, binPath, device, ncnnRendererDeviceIndex)) {
         return false;

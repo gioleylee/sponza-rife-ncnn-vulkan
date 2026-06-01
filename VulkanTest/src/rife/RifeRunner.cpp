@@ -106,12 +106,13 @@ bool RifeRunner::isReady() const {
     return rifeEngine && !loadedParamPath.empty() && !loadedBinPath.empty();
 }
 
-int RifeRunner::processGpuRgbaFrames(VkBuffer prevBuffer,
+int RifeRunner::processGpuRgbaFrames(VkImage prevImage,
+                                     VkImageView prevImageView,
                                      VkDeviceMemory prevMemory,
-                                     VkDeviceSize prevSize,
-                                     VkBuffer currBuffer,
+                                     VkImage currImage,
+                                     VkImageView currImageView,
                                      VkDeviceMemory currMemory,
-                                     VkDeviceSize currSize,
+                                     VkFormat inputFormat,
                                      VkBuffer outBuffer,
                                      VkDeviceMemory outMemory,
                                      VkDeviceSize outSize,
@@ -127,10 +128,30 @@ int RifeRunner::processGpuRgbaFrames(VkBuffer prevBuffer,
     const VkDeviceSize expectedSize =
         static_cast<VkDeviceSize>(width) *
         static_cast<VkDeviceSize>(height) * 4;
-    if (prevBuffer == VK_NULL_HANDLE || currBuffer == VK_NULL_HANDLE || outBuffer == VK_NULL_HANDLE ||
-        prevSize < expectedSize || currSize < expectedSize || outSize < expectedSize) {
+    if (prevImage == VK_NULL_HANDLE || prevImageView == VK_NULL_HANDLE ||
+        currImage == VK_NULL_HANDLE || currImageView == VK_NULL_HANDLE ||
+        outBuffer == VK_NULL_HANDLE || outSize < expectedSize) {
         return -2;
     }
+
+    auto wrapExternalImage = [width, height, inputFormat](VkImage image, VkImageView imageView, VkDeviceMemory memory) {
+        ncnn::VkImageMemory wrapped{};
+        wrapped.image = image;
+        wrapped.imageview = imageView;
+        wrapped.width = width;
+        wrapped.height = height;
+        wrapped.depth = 1;
+        wrapped.format = inputFormat;
+        wrapped.memory = memory;
+        wrapped.access_flags = VK_ACCESS_SHADER_READ_BIT;
+        wrapped.image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        wrapped.stage_flags = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        // This block describes a renderer-owned image. NCNN command cleanup
+        // destroys image blocks whose user refcount reaches zero, so retain an
+        // external reference and let the renderer own the Vulkan handles.
+        wrapped.refcount = 1;
+        return wrapped;
+    };
 
     auto wrapExternalBuffer = [](VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize size) {
         ncnn::VkBufferMemory wrapped{};
@@ -145,14 +166,14 @@ int RifeRunner::processGpuRgbaFrames(VkBuffer prevBuffer,
         return wrapped;
     };
 
-    ncnn::VkBufferMemory prevWrapped = wrapExternalBuffer(prevBuffer, prevMemory, prevSize);
-    ncnn::VkBufferMemory currWrapped = wrapExternalBuffer(currBuffer, currMemory, currSize);
+    ncnn::VkImageMemory prevWrapped = wrapExternalImage(prevImage, prevImageView, prevMemory);
+    ncnn::VkImageMemory currWrapped = wrapExternalImage(currImage, currImageView, currMemory);
     ncnn::VkBufferMemory outWrapped = wrapExternalBuffer(outBuffer, outMemory, outSize);
     outWrapped.access_flags = 0;
     outWrapped.stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 
-    ncnn::VkMat prev(width, height, &prevWrapped, (size_t)4u, 1, nullptr);
-    ncnn::VkMat curr(width, height, &currWrapped, (size_t)4u, 1, nullptr);
+    ncnn::VkImageMat prev(width, height, &prevWrapped, (size_t)4u, 1, nullptr);
+    ncnn::VkImageMat curr(width, height, &currWrapped, (size_t)4u, 1, nullptr);
     ncnn::VkMat out(width, height, &outWrapped, (size_t)4u, 1, nullptr);
 
     return rifeEngine->process_v4_gpu(prev, curr, width, height, inferenceWidth, inferenceHeight, timestep, out);

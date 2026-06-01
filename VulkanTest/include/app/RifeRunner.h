@@ -34,12 +34,13 @@ public:
 
     bool isReady() const;
 
-    int processGpuRgbaFrames(VkBuffer prevBuffer,
+    int processGpuRgbaFrames(VkImage prevImage,
+                             VkImageView prevImageView,
                              VkDeviceMemory prevMemory,
-                             VkDeviceSize prevSize,
-                             VkBuffer currBuffer,
+                             VkImage currImage,
+                             VkImageView currImageView,
                              VkDeviceMemory currMemory,
-                             VkDeviceSize currSize,
+                             VkFormat inputFormat,
                              VkBuffer outBuffer,
                              VkDeviceMemory outMemory,
                              VkDeviceSize outSize,

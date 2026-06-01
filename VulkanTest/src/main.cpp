@@ -9,6 +9,8 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/vector3.h>
+#include <assimp/types.h>
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -669,6 +671,20 @@ void HelloTriangleApplication::createFrameProcessingResources() {
     rifeLastPresentedSourceIndex = UINT32_MAX;
     rifeRenderAheadPending = false;
 
+    const auto toUnormFormat = [](VkFormat format) {
+        switch (format) {
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return VK_FORMAT_B8G8R8A8_UNORM;
+        case VK_FORMAT_R8G8B8A8_SRGB:
+            return VK_FORMAT_R8G8B8A8_UNORM;
+        default:
+            return format;
+        }
+    };
+    const VkFormat rifeInputFormat = toUnormFormat(swapChainImageFormat);
+    const VkImageCreateFlags offscreenFlags =
+        rifeInputFormat != swapChainImageFormat ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
+
     for (auto& frame : offscreenFrames) {
         createImage(
             swapChainExtent.width,
@@ -676,20 +692,14 @@ void HelloTriangleApplication::createFrameProcessingResources() {
             1,
             swapChainImageFormat,
             VK_IMAGE_TILING_OPTIMAL,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             frame.image,
-            frame.imageMemory
+            frame.imageMemory,
+            offscreenFlags
         );
         frame.imageView = createImageView(frame.image, swapChainImageFormat, 1);
-
-        createBuffer(
-            frameSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            frame.gpuBuffer,
-            frame.gpuMemory
-        );
+        frame.rifeInputImageView = createImageView(frame.image, rifeInputFormat, 1);
 
         frame.size = frameSize;
     }
@@ -779,6 +789,11 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
             frame.imageView = VK_NULL_HANDLE;
         }
 
+        if (frame.rifeInputImageView) {
+            vkDestroyImageView(device, frame.rifeInputImageView, nullptr);
+            frame.rifeInputImageView = VK_NULL_HANDLE;
+        }
+
         if (frame.image) {
             vkDestroyImage(device, frame.image, nullptr);
             frame.image = VK_NULL_HANDLE;
@@ -840,83 +855,61 @@ uint32_t HelloTriangleApplication::findAvailableOffscreenFrameSlot() const {
     return UINT32_MAX;
 }
 
-bool HelloTriangleApplication::copyRenderedOffscreenFrameToGpuBuffer(VkCommandBuffer commandBuffer, uint32_t offscreenSlot) {
-    if (offscreenSlot >= offscreenFrames.size()) {
-        return false;
-    }
+void HelloTriangleApplication::copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer,
+                                                              uint32_t imageIndex,
+                                                              uint32_t offscreenSlot) {
+    auto& source = offscreenFrames[offscreenSlot];
+    VkImageMemoryBarrier toTransferSrc{};
+    toTransferSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransferSrc.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toTransferSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransferSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferSrc.image = source.image;
+    toTransferSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransferSrc.subresourceRange.levelCount = 1;
+    toTransferSrc.subresourceRange.layerCount = 1;
+    toTransferSrc.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    toTransferSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferSrc);
 
-    VkImageMemoryBarrier renderToTransferBarrier{};
-    renderToTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    renderToTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    renderToTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    renderToTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    renderToTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    renderToTransferBarrier.image = offscreenFrames[offscreenSlot].image;
-    renderToTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    renderToTransferBarrier.subresourceRange.baseMipLevel = 0;
-    renderToTransferBarrier.subresourceRange.levelCount = 1;
-    renderToTransferBarrier.subresourceRange.baseArrayLayer = 0;
-    renderToTransferBarrier.subresourceRange.layerCount = 1;
-    renderToTransferBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    renderToTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    VkImageMemoryBarrier toTransferDst{};
+    toTransferDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransferDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toTransferDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransferDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferDst.image = swapChainImages[imageIndex];
+    toTransferDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransferDst.subresourceRange.levelCount = 1;
+    toTransferDst.subresourceRange.layerCount = 1;
+    toTransferDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
 
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &renderToTransferBarrier
-    );
+    VkImageCopy region{};
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.layerCount = 1;
+    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.dstSubresource.layerCount = 1;
+    region.extent = { swapChainExtent.width, swapChainExtent.height, 1 };
+    vkCmdCopyImage(commandBuffer, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        swapChainImages[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = { 0, 0, 0 };
-    region.imageExtent = { swapChainExtent.width, swapChainExtent.height, 1 };
+    toTransferSrc.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransferSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toTransferSrc.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    toTransferSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferSrc);
 
-    vkCmdCopyImageToBuffer(
-        commandBuffer,
-        offscreenFrames[offscreenSlot].image,
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        offscreenFrames[offscreenSlot].gpuBuffer,
-        1,
-        &region
-    );
-
-    VkBufferMemoryBarrier gpuBufferBarrier{};
-    gpuBufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    gpuBufferBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    gpuBufferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    gpuBufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    gpuBufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    gpuBufferBarrier.buffer = offscreenFrames[offscreenSlot].gpuBuffer;
-    gpuBufferBarrier.offset = 0;
-    gpuBufferBarrier.size = VK_WHOLE_SIZE;
-
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0,
-        nullptr,
-        1,
-        &gpuBufferBarrier,
-        0,
-        nullptr
-    );
-
-    return true;
+    toTransferDst.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransferDst.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toTransferDst.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toTransferDst.dstAccessMask = 0;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
 }
 
 void HelloTriangleApplication::copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
@@ -1067,17 +1060,11 @@ void HelloTriangleApplication::displayRifeSourceBufferOnSwapchain(VkCommandBuffe
     }
 
     const auto& source = offscreenFrames[sourceIndex];
-    if (source.gpuBuffer == VK_NULL_HANDLE || source.size == 0) {
+    if (source.image == VK_NULL_HANDLE || source.size == 0) {
         return;
     }
 
-    copyRifeBufferToSwapchain(
-        commandBuffer,
-        imageIndex,
-        source.gpuBuffer,
-        VK_ACCESS_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT
-    );
+    copyOffscreenImageToSwapchain(commandBuffer, imageIndex, sourceIndex);
 }
 
 void HelloTriangleApplication::displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
@@ -1289,13 +1276,11 @@ uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBu
     vkCmdEndRenderPass(commandBuffer);
 
     // Frame flow for a real frame:
-    //   scene render -> offscreen image -> device-local NCNN buffer -> swapchain
+    //   scene render -> sampled offscreen image -> fused NCNN tensor preprocessor
+    //   Real-frame presentation copies the same image directly to the swapchain.
     // The swapchain is only a presentation target and is never an inference
     // capture source. Once this submission's fence signals, the history manager
     // may pair this frame with its predecessor and start RIFE.
-    if (!copyRenderedOffscreenFrameToGpuBuffer(commandBuffer, offscreenSlot)) {
-        throw std::runtime_error("failed to stage offscreen frame for RIFE!");
-    }
 #if HAS_NCNN
     if (rifeRealtimeInterpolationEnabled &&
         rifeModelAttachedToRenderer &&
@@ -1461,12 +1446,16 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
 
     const uint32_t prevIndex = previousRifeGpuFrameIndex;
     const uint32_t currIndex = currentRifeGpuFrameIndex;
-    const VkBuffer prevBuffer = offscreenFrames[prevIndex].gpuBuffer;
-    const VkDeviceMemory prevMemory = offscreenFrames[prevIndex].gpuMemory;
-    const VkDeviceSize prevSize = offscreenFrames[prevIndex].size;
-    const VkBuffer currBuffer = offscreenFrames[currIndex].gpuBuffer;
-    const VkDeviceMemory currMemory = offscreenFrames[currIndex].gpuMemory;
-    const VkDeviceSize currSize = offscreenFrames[currIndex].size;
+    const VkImage prevImage = offscreenFrames[prevIndex].image;
+    const VkImageView prevImageView = offscreenFrames[prevIndex].rifeInputImageView;
+    const VkDeviceMemory prevMemory = offscreenFrames[prevIndex].imageMemory;
+    const VkImage currImage = offscreenFrames[currIndex].image;
+    const VkImageView currImageView = offscreenFrames[currIndex].rifeInputImageView;
+    const VkDeviceMemory currMemory = offscreenFrames[currIndex].imageMemory;
+    const VkFormat inputFormat =
+        swapChainImageFormat == VK_FORMAT_B8G8R8A8_SRGB ? VK_FORMAT_B8G8R8A8_UNORM :
+        swapChainImageFormat == VK_FORMAT_R8G8B8A8_SRGB ? VK_FORMAT_R8G8B8A8_UNORM :
+        swapChainImageFormat;
     const VkBuffer outBuffer = rifeOutputBuffers[outputIndex].gpuBuffer;
     const VkDeviceMemory outMemory = rifeOutputBuffers[outputIndex].gpuMemory;
     const VkDeviceSize outSize = rifeOutputBuffers[outputIndex].size;
@@ -1492,12 +1481,13 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
     rifeInferenceRequestWaitingForFramePair = false;
 
     asyncRifeInference = std::async(std::launch::async, [this,
-                                                         prevBuffer,
+                                                         prevImage,
+                                                         prevImageView,
                                                          prevMemory,
-                                                         prevSize,
-                                                         currBuffer,
+                                                         currImage,
+                                                         currImageView,
                                                          currMemory,
-                                                         currSize,
+                                                         inputFormat,
                                                          outBuffer,
                                                          outMemory,
                                                          outSize,
@@ -1518,12 +1508,13 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         const auto start = std::chrono::high_resolution_clock::now();
         result.processRet = rifeRunner.processGpuRgbaFrames(
-            prevBuffer,
+            prevImage,
+            prevImageView,
             prevMemory,
-            prevSize,
-            currBuffer,
+            currImage,
+            currImageView,
             currMemory,
-            currSize,
+            inputFormat,
             outBuffer,
             outMemory,
             outSize,
@@ -1854,9 +1845,11 @@ void HelloTriangleApplication::appendRotatingCubeGeometry() {
 void HelloTriangleApplication::createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
     VkImageTiling tiling, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties,
-    VkImage& image, VkDeviceMemory& imageMemory) {
+    VkImage& image, VkDeviceMemory& imageMemory,
+    VkImageCreateFlags flags) {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = flags;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;

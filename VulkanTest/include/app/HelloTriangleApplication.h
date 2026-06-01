@@ -340,7 +340,7 @@ private:
 
     uint32_t findAvailableOffscreenFrameSlot() const;
 
-    bool copyRenderedOffscreenFrameToGpuBuffer(VkCommandBuffer commandBuffer, uint32_t offscreenSlot);
+    void copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t offscreenSlot);
 
     void copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
                                    uint32_t imageIndex,
@@ -389,7 +389,8 @@ private:
     void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
         VkImageTiling tiling, VkImageUsageFlags usage,
         VkMemoryPropertyFlags properties,
-        VkImage& image, VkDeviceMemory& imageMemory);
+        VkImage& image, VkDeviceMemory& imageMemory,
+        VkImageCreateFlags flags = 0);
 
     VkImageView createImageView(VkImage image, VkFormat format, uint32_t mipLevels);
 

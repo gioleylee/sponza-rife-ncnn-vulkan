@@ -21,7 +21,7 @@ void HelloTriangleApplication::createRenderPass() {
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     // Real frames render into history images. The swapchain is touched only by
     // the final presentation copy selected by the frame scheduler.
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentDescription normalAttachment{};
     normalAttachment.format = VK_FORMAT_R16G16B16A16_SFLOAT;

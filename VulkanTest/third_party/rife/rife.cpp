@@ -28,6 +28,50 @@
 
 DEFINE_LAYER_CREATOR(Warp)
 
+// Fused renderer-image input path. The previous path first copied the complete
+// RGBA frame into a buffer, then ran the regular RIFE preprocessor. This shader
+// samples the offscreen image directly and performs resize, RGB extraction,
+// normalization, padding, and fp16 tensor packing in one dispatch.
+static const char rife_preproc_image_comp_data[] = R"(
+#version 450
+#if NCNN_fp16_storage
+#extension GL_EXT_shader_16bit_storage: require
+#endif
+layout (binding = 0) uniform sampler2D bottom_blob;
+layout (binding = 1) writeonly buffer top_blob { sfp top_blob_data[]; };
+layout (push_constant) uniform parameter
+{
+    int w;
+    int h;
+    int cstep;
+    int outw;
+    int outh;
+    int outcstep;
+    int srcw;
+    int srch;
+    int inferw;
+    int inferh;
+} p;
+void main()
+{
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    int gz = int(gl_GlobalInvocationID.z);
+    if (gx >= p.outw || gy >= p.outh || gz >= 3)
+        return;
+    int out_offset = gz * p.outcstep + gy * p.outw + gx;
+    if (gx >= p.inferw || gy >= p.inferh)
+    {
+        top_blob_data[out_offset] = sfp(0.f);
+        return;
+    }
+    int sx = clamp(int((float(gx) + 0.5f) * float(p.srcw) / float(p.inferw)), 0, p.srcw - 1);
+    int sy = clamp(int((float(gy) + 0.5f) * float(p.srch) / float(p.inferh)), 0, p.srch - 1);
+    vec4 rgba = texelFetch(bottom_blob, ivec2(sx, sy), 0);
+    top_blob_data[out_offset] = sfp(rgba[gz]);
+}
+)";
+
 static std::vector<ncnn::vk_constant_type> make_rife_preproc_constants(
     int srcw, int srch, int src_stride, int outw, int outh, int outcstep, int inferw, int inferh)
 {
@@ -72,6 +116,7 @@ RIFE::RIFE(ncnn::VulkanDevice* _vkdev, bool _tta_mode, bool _tta_temporal_mode, 
     vkdev = _vkdev;
 
     rife_preproc = 0;
+    rife_preproc_image = 0;
     rife_postproc = 0;
     rife_flow_tta_avg = 0;
     rife_flow_tta_temporal_avg = 0;
@@ -94,6 +139,7 @@ RIFE::~RIFE()
     // cleanup preprocess and postprocess pipeline
     {
         delete rife_preproc;
+        delete rife_preproc_image;
         delete rife_postproc;
         delete rife_flow_tta_avg;
         delete rife_flow_tta_temporal_avg;
@@ -235,6 +281,34 @@ int RIFE::load(const std::string& modeldir, const std::string& flownet_name)
             rife_preproc = new ncnn::Pipeline(vkdev);
             rife_preproc->set_optimal_local_size_xyz(8, 8, 3);
             rife_preproc->create(spirv.data(), spirv.size() * 4, specializations);
+        }
+        {
+            std::vector<uint32_t> spirv;
+            // Raw string literals include a terminating NUL. The generated
+            // shader byte arrays do not, and glslang rejects that extra byte.
+            const int compile_ret = compile_spirv_module(
+                rife_preproc_image_comp_data,
+                sizeof(rife_preproc_image_comp_data) - 1,
+                opt,
+                spirv);
+            if (compile_ret != 0 || spirv.empty())
+            {
+                fprintf(stderr, "[RIFE] failed to compile fused image preprocessor shader (code=%d)\n", compile_ret);
+                return -1;
+            }
+
+            rife_preproc_image = new ncnn::Pipeline(vkdev);
+            rife_preproc_image->set_optimal_local_size_xyz(8, 8, 3);
+            std::vector<ncnn::vk_specialization_type> image_specializations;
+            const int pipeline_ret = rife_preproc_image->create(
+                spirv.data(),
+                spirv.size() * 4,
+                image_specializations);
+            if (pipeline_ret != 0 || !rife_preproc_image->pipeline())
+            {
+                fprintf(stderr, "[RIFE] failed to create fused image preprocessor pipeline (code=%d)\n", pipeline_ret);
+                return -1;
+            }
         }
 
         {
@@ -3210,7 +3284,7 @@ int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float
     return 0;
 }
 
-int RIFE::process_v4_gpu(const ncnn::VkMat& in0image, const ncnn::VkMat& in1image, int width, int height, int inference_width, int inference_height, float timestep, ncnn::VkMat& outimage) const
+int RIFE::process_v4_gpu(const ncnn::VkImageMat& in0image, const ncnn::VkImageMat& in1image, int width, int height, int inference_width, int inference_height, float timestep, ncnn::VkMat& outimage) const
 {
     if (!vkdev)
         return -1;
@@ -3248,23 +3322,6 @@ int RIFE::process_v4_gpu(const ncnn::VkMat& in0image, const ncnn::VkMat& in1imag
 
     ncnn::VkCompute cmd(vkdev);
 
-    if (timestep == 0.f || timestep == 1.f)
-    {
-        const ncnn::VkMat& passthrough = timestep == 0.f ? in0image : in1image;
-        if (passthrough.elemsize == outimage.elemsize)
-        {
-            cmd.record_clone(passthrough, outimage, opt);
-            cmd.submit_and_wait();
-            vkdev->reclaim_blob_allocator(blob_vkallocator);
-            vkdev->reclaim_staging_allocator(staging_vkallocator);
-            return 0;
-        }
-
-        vkdev->reclaim_blob_allocator(blob_vkallocator);
-        vkdev->reclaim_staging_allocator(staging_vkallocator);
-        return -5;
-    }
-
     ncnn::VkMat in0_gpu_padded;
     ncnn::VkMat in1_gpu_padded;
     ncnn::VkMat timestep_gpu_padded;
@@ -3272,31 +3329,33 @@ int RIFE::process_v4_gpu(const ncnn::VkMat& in0image, const ncnn::VkMat& in1imag
     {
         in0_gpu_padded.create(w_padded, h_padded, 3, in_out_tile_elemsize, 1, blob_vkallocator);
 
-        std::vector<ncnn::VkMat> bindings(2);
-        bindings[0] = in0image;
-        bindings[1] = in0_gpu_padded;
+        std::vector<ncnn::VkMat> buffer_bindings(1);
+        buffer_bindings[0] = in0_gpu_padded;
+        std::vector<ncnn::VkImageMat> image_bindings(1);
+        image_bindings[0] = in0image;
 
         std::vector<ncnn::vk_constant_type> constants = make_rife_preproc_constants(
             width, height, static_cast<int>(in0image.elemsize),
             in0_gpu_padded.w, in0_gpu_padded.h, in0_gpu_padded.cstep,
             inference_width, inference_height);
 
-        cmd.record_pipeline(rife_preproc, bindings, constants, in0_gpu_padded);
+        cmd.record_pipeline(rife_preproc_image, buffer_bindings, image_bindings, constants, in0_gpu_padded);
     }
 
     {
         in1_gpu_padded.create(w_padded, h_padded, 3, in_out_tile_elemsize, 1, blob_vkallocator);
 
-        std::vector<ncnn::VkMat> bindings(2);
-        bindings[0] = in1image;
-        bindings[1] = in1_gpu_padded;
+        std::vector<ncnn::VkMat> buffer_bindings(1);
+        buffer_bindings[0] = in1_gpu_padded;
+        std::vector<ncnn::VkImageMat> image_bindings(1);
+        image_bindings[0] = in1image;
 
         std::vector<ncnn::vk_constant_type> constants = make_rife_preproc_constants(
             width, height, static_cast<int>(in1image.elemsize),
             in1_gpu_padded.w, in1_gpu_padded.h, in1_gpu_padded.cstep,
             inference_width, inference_height);
 
-        cmd.record_pipeline(rife_preproc, bindings, constants, in1_gpu_padded);
+        cmd.record_pipeline(rife_preproc_image, buffer_bindings, image_bindings, constants, in1_gpu_padded);
     }
 
     {

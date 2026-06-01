@@ -103,14 +103,15 @@ struct LightingPushConstants {
     alignas(16) glm::vec4 cameraPos;
 };
 
-// A real rendered frame lives entirely on the GPU. The image is the render
-// target; gpuBuffer is its device-local NCNN interop mirror and presentation
-// source. Keeping both avoids any CPU readback while preserving NCNN's current
-// external VkBuffer interface.
+// A real rendered frame lives entirely on the GPU. imageView preserves SRGB
+// rendering and presentation behavior; rifeInputImageView reads the same image
+// through a compatible UNORM view so NCNN sees the stored normalized color
+// values without an image-to-buffer copy or implicit SRGB decoding.
 struct OffscreenFrame {
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory imageMemory = VK_NULL_HANDLE;
     VkImageView imageView = VK_NULL_HANDLE;
+    VkImageView rifeInputImageView = VK_NULL_HANDLE;
     VkBuffer gpuBuffer = VK_NULL_HANDLE;
     VkDeviceMemory gpuMemory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;

@@ -27,7 +27,7 @@ public:
 
     int process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;
 
-    int process_v4_gpu(const ncnn::VkMat& in0image, const ncnn::VkMat& in1image, int width, int height, int inference_width, int inference_height, float timestep, ncnn::VkMat& outimage) const;
+    int process_v4_gpu(const ncnn::VkImageMat& in0image, const ncnn::VkImageMat& in1image, int width, int height, int inference_width, int inference_height, float timestep, ncnn::VkMat& outimage) const;
 
     int process_v4_cpu(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;
 
@@ -37,6 +37,7 @@ private:
     ncnn::Net contextnet;
     ncnn::Net fusionnet;
     ncnn::Pipeline* rife_preproc;
+    ncnn::Pipeline* rife_preproc_image;
     ncnn::Pipeline* rife_postproc;
     ncnn::Pipeline* rife_flow_tta_avg;
     ncnn::Pipeline* rife_flow_tta_temporal_avg;

@@ -329,9 +329,10 @@ void HelloTriangleApplication::createSwapChain() {
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
-    // Swapchain images are presentation-only destinations. Scene rendering and
-    // RIFE input history never use them as render targets or capture sources.
-    createInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // Swapchain images remain final presentation destinations. Keep color
+    // attachment capability because the existing swapchain view lifecycle
+    // creates image views for them, even though scene rendering is offscreen.
+    createInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
     uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };

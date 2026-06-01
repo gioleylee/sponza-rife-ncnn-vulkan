@@ -121,12 +121,12 @@ RIFE::~RIFE()
 }
 
 #if _WIN32
-static void load_param_model(ncnn::Net& net, const std::wstring& modeldir, const wchar_t* name)
+static void load_param_model(ncnn::Net& net, const std::wstring& modeldir, const std::wstring& name)
 {
     wchar_t parampath[256];
     wchar_t modelpath[256];
-    swprintf(parampath, 256, L"%s/%s.param", modeldir.c_str(), name);
-    swprintf(modelpath, 256, L"%s/%s.bin", modeldir.c_str(), name);
+    swprintf(parampath, 256, L"%s/%s.param", modeldir.c_str(), name.c_str());
+    swprintf(modelpath, 256, L"%s/%s.bin", modeldir.c_str(), name.c_str());
 
     {
         FILE* fp = _wfopen(parampath, L"rb");
@@ -152,12 +152,12 @@ static void load_param_model(ncnn::Net& net, const std::wstring& modeldir, const
     }
 }
 #else
-static void load_param_model(ncnn::Net& net, const std::string& modeldir, const char* name)
+static void load_param_model(ncnn::Net& net, const std::string& modeldir, const std::string& name)
 {
     char parampath[256];
     char modelpath[256];
-    sprintf(parampath, "%s/%s.param", modeldir.c_str(), name);
-    sprintf(modelpath, "%s/%s.bin", modeldir.c_str(), name);
+    sprintf(parampath, "%s/%s.param", modeldir.c_str(), name.c_str());
+    sprintf(modelpath, "%s/%s.bin", modeldir.c_str(), name.c_str());
 
     net.load_param(parampath);
     net.load_model(modelpath);
@@ -165,9 +165,9 @@ static void load_param_model(ncnn::Net& net, const std::string& modeldir, const 
 #endif
 
 #if _WIN32
-int RIFE::load(const std::wstring& modeldir)
+int RIFE::load(const std::wstring& modeldir, const std::wstring& flownet_name)
 #else
-int RIFE::load(const std::string& modeldir)
+int RIFE::load(const std::string& modeldir, const std::string& flownet_name)
 #endif
 {
     ncnn::Option opt;
@@ -175,9 +175,10 @@ int RIFE::load(const std::string& modeldir)
     opt.use_vulkan_compute = vkdev ? true : false;
     opt.use_fp16_packed = vkdev ? true : false;
     opt.use_fp16_storage = vkdev ? true : false;
-    opt.use_fp16_arithmetic = false;
+    opt.use_fp16_arithmetic = true;
     opt.use_int8_storage = true;
-    opt.use_cooperative_matrix = false;
+    opt.use_packing_layout = true;
+    opt.use_cooperative_matrix = true;
 
     flownet.opt = opt;
     contextnet.opt = opt;
@@ -192,14 +193,14 @@ int RIFE::load(const std::string& modeldir)
     fusionnet.register_custom_layer("rife.Warp", Warp_layer_creator);
 
 #if _WIN32
-    load_param_model(flownet, modeldir, L"flownet");
+    load_param_model(flownet, modeldir, flownet_name);
     if (!rife_v4)
     {
         load_param_model(contextnet, modeldir, L"contextnet");
         load_param_model(fusionnet, modeldir, L"fusionnet");
     }
 #else
-    load_param_model(flownet, modeldir, "flownet");
+    load_param_model(flownet, modeldir, flownet_name);
     if (!rife_v4)
     {
         load_param_model(contextnet, modeldir, "contextnet");

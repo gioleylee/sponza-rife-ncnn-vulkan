@@ -80,11 +80,13 @@ bool RifeRunner::initialize(ncnn::Net& targetNet,
     }
 
     auto engine = std::make_unique<RIFE>(rendererVkdev.get(), false, false, false, 1, false, true);
-    const std::filesystem::path modelDir = std::filesystem::path(paramPath).parent_path();
+    const std::filesystem::path modelPath = std::filesystem::path(paramPath);
+    const std::filesystem::path modelDir = modelPath.parent_path();
+    const std::filesystem::path modelName = modelPath.stem();
 #if _WIN32
-    const int engineLoadRet = engine->load(modelDir.wstring());
+    const int engineLoadRet = engine->load(modelDir.wstring(), modelName.wstring());
 #else
-    const int engineLoadRet = engine->load(modelDir.string());
+    const int engineLoadRet = engine->load(modelDir.string(), modelName.string());
 #endif
     if (engineLoadRet != 0) {
         std::cerr << "[RIFE] failed to initialize Vulkan RIFE engine from: "

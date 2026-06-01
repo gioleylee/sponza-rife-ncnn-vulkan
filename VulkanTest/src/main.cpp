@@ -236,10 +236,6 @@ void HelloTriangleApplication::applyNcnnVulkanOptions() {
     net.opt.use_packing_layout = true;
 
     net.opt.use_cooperative_matrix = true;
-
-    std::cout << "[NCNN] selected GPU: "
-              << (gpuInfo ? gpuInfo->device_name() : "<none>") << std::endl;
-    std::cout << "[NCNN] cooperative matrix: on" << std::endl;
 }
 
 void HelloTriangleApplication::initNcnn() {
@@ -298,16 +294,26 @@ bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const
 }
 
 void HelloTriangleApplication::tryLoadDefaultNcnnModel() {
+    const std::string optimizedParam = "assets/models/rife-v4/flownet-opt.param";
+    const std::string optimizedBin = "assets/models/rife-v4/flownet-opt.bin";
     const std::string defaultParam = "assets/models/rife-v4/flownet.param";
     const std::string defaultBin = "assets/models/rife-v4/flownet.bin";
 
-    if (!std::filesystem::exists(defaultParam) || !std::filesystem::exists(defaultBin)) {
+    const bool hasOptimizedModel =
+        std::filesystem::exists(optimizedParam) && std::filesystem::exists(optimizedBin);
+    const std::string& paramPath = hasOptimizedModel ? optimizedParam : defaultParam;
+    const std::string& binPath = hasOptimizedModel ? optimizedBin : defaultBin;
+
+    if (!std::filesystem::exists(paramPath) || !std::filesystem::exists(binPath)) {
         std::cout << "[NCNN] default RIFE model not found: "
-                  << defaultParam << " and " << defaultBin << std::endl;
+                  << paramPath << " and " << binPath << std::endl;
         return;
     }
 
-    if (loadNcnnModel(defaultParam, defaultBin)) {
+    std::cout << "[NCNN] using " << (hasOptimizedModel ? "output" : "original model")
+              << ": " << paramPath << " + " << binPath << std::endl;
+
+    if (loadNcnnModel(paramPath, binPath)) {
         ncnn::Extractor extractor = net.create_extractor();
         (void)extractor;
         std::cout << "[NCNN] extractor created successfully" << std::endl;

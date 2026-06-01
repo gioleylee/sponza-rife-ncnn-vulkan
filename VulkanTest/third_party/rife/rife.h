@@ -16,9 +16,9 @@ public:
     ~RIFE();
 
 #if _WIN32
-    int load(const std::wstring& modeldir);
+    int load(const std::wstring& modeldir, const std::wstring& flownet_name = L"flownet");
 #else
-    int load(const std::string& modeldir);
+    int load(const std::string& modeldir, const std::string& flownet_name = "flownet");
 #endif
 
     int process(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;

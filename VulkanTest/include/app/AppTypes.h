@@ -23,7 +23,7 @@ inline constexpr int RIFE_MIN_INFERENCE_SCALE_DIVISOR = 4;
 inline constexpr int RIFE_MAX_INFERENCE_SCALE_DIVISOR = 4;
 inline constexpr double RIFE_TARGET_INFERENCE_MS = 10.0;
 inline constexpr double RIFE_FAST_INFERENCE_MS = 6.0;
-inline constexpr uint32_t RIFE_CAPTURE_BUFFER_COUNT = 4;
+inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 4;
 inline constexpr uint32_t RIFE_OUTPUT_BUFFER_COUNT = 3;
 
 inline const std::vector<const char*> deviceExtensions = {
@@ -103,7 +103,14 @@ struct LightingPushConstants {
     alignas(16) glm::vec4 cameraPos;
 };
 
-struct FrameCaptureBuffer {
+// A real rendered frame lives entirely on the GPU. The image is the render
+// target; gpuBuffer is its device-local NCNN interop mirror and presentation
+// source. Keeping both avoids any CPU readback while preserving NCNN's current
+// external VkBuffer interface.
+struct OffscreenFrame {
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory imageMemory = VK_NULL_HANDLE;
+    VkImageView imageView = VK_NULL_HANDLE;
     VkBuffer gpuBuffer = VK_NULL_HANDLE;
     VkDeviceMemory gpuMemory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;

@@ -7,15 +7,15 @@
 #include <stdexcept>
 
 void HelloTriangleApplication::createFramebuffers() {
-    swapChainFramebuffers.resize(swapChainImageViews.size());
+    offscreenFramebuffers.resize(offscreenFrames.size());
 
-    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+    for (size_t i = 0; i < offscreenFrames.size(); i++) {
         VkImageView attachments[] = {
-            swapChainImageViews[i],
+            offscreenFrames[i].imageView,
             gNormalImageViews[i],
             gAlbedoImageViews[i],
             gPositionImageViews[i],
-            depthImageView
+            depthImageViews[i]
         };
 
         VkFramebufferCreateInfo framebufferInfo{};
@@ -27,8 +27,8 @@ void HelloTriangleApplication::createFramebuffers() {
         framebufferInfo.height = swapChainExtent.height;
         framebufferInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer!");
+        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &offscreenFramebuffers[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create offscreen framebuffer!");
         }
     }
 }
@@ -36,30 +36,33 @@ void HelloTriangleApplication::createFramebuffers() {
 void HelloTriangleApplication::createDepthResources() {
     VkFormat depthFormat = findDepthFormat();
 
-    uint32_t mipLevels = 1;
+    depthImages.resize(offscreenFrames.size());
+    depthImageMemories.resize(offscreenFrames.size());
+    depthImageViews.resize(offscreenFrames.size());
 
-    createImage(
-        swapChainExtent.width,
-        swapChainExtent.height,
-        mipLevels,
-        depthFormat,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        depthImage,
-        depthImageMemory
-    );
-
-    depthImageView = createImageView(depthImage, depthFormat, mipLevels);
+    for (size_t i = 0; i < offscreenFrames.size(); ++i) {
+        createImage(
+            swapChainExtent.width,
+            swapChainExtent.height,
+            1,
+            depthFormat,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            depthImages[i],
+            depthImageMemories[i]
+        );
+        depthImageViews[i] = createImageView(depthImages[i], depthFormat, 1);
+    }
 }
 
 void HelloTriangleApplication::createGBufferAttachments() {
     VkFormat normalFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    gNormalImages.resize(swapChainImages.size());
-    gNormalImageMemories.resize(swapChainImages.size());
-    gNormalImageViews.resize(swapChainImages.size());
+    gNormalImages.resize(offscreenFrames.size());
+    gNormalImageMemories.resize(offscreenFrames.size());
+    gNormalImageViews.resize(offscreenFrames.size());
 
-    for (size_t i = 0; i < swapChainImages.size(); ++i) {
+    for (size_t i = 0; i < offscreenFrames.size(); ++i) {
         createImage(
             swapChainExtent.width,
             swapChainExtent.height,
@@ -75,11 +78,11 @@ void HelloTriangleApplication::createGBufferAttachments() {
     }
 
     VkFormat albedoFormat = VK_FORMAT_R8G8B8A8_UNORM;
-    gAlbedoImages.resize(swapChainImages.size());
-    gAlbedoImageMemories.resize(swapChainImages.size());
-    gAlbedoImageViews.resize(swapChainImages.size());
+    gAlbedoImages.resize(offscreenFrames.size());
+    gAlbedoImageMemories.resize(offscreenFrames.size());
+    gAlbedoImageViews.resize(offscreenFrames.size());
 
-    for (size_t i = 0; i < swapChainImages.size(); ++i) {
+    for (size_t i = 0; i < offscreenFrames.size(); ++i) {
         createImage(
             swapChainExtent.width,
             swapChainExtent.height,
@@ -95,11 +98,11 @@ void HelloTriangleApplication::createGBufferAttachments() {
     }
 
     VkFormat positionFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-    gPositionImages.resize(swapChainImages.size());
-    gPositionImageMemories.resize(swapChainImages.size());
-    gPositionImageViews.resize(swapChainImages.size());
+    gPositionImages.resize(offscreenFrames.size());
+    gPositionImageMemories.resize(offscreenFrames.size());
+    gPositionImageViews.resize(offscreenFrames.size());
 
-    for (size_t i = 0; i < swapChainImages.size(); ++i) {
+    for (size_t i = 0; i < offscreenFrames.size(); ++i) {
         createImage(
             swapChainExtent.width,
             swapChainExtent.height,

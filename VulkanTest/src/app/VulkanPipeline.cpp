@@ -19,7 +19,9 @@ void HelloTriangleApplication::createRenderPass() {
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    // Real frames render into history images. The swapchain is touched only by
+    // the final presentation copy selected by the frame scheduler.
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
     VkAttachmentDescription normalAttachment{};
     normalAttachment.format = VK_FORMAT_R16G16B16A16_SFLOAT;

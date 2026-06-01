@@ -103,7 +103,7 @@ private:
     VkFormat swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D swapChainExtent{};
     std::vector<VkImageView> swapChainImageViews;
-    std::vector<VkFramebuffer> swapChainFramebuffers;
+    std::vector<VkFramebuffer> offscreenFramebuffers;
 
     std::vector<VkImage> gNormalImages;
     std::vector<VkDeviceMemory> gNormalImageMemories;
@@ -117,9 +117,9 @@ private:
     std::vector<VkDeviceMemory> gPositionImageMemories;
     std::vector<VkImageView> gPositionImageViews;
 
-    VkImage depthImage = VK_NULL_HANDLE;
-    VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
-    VkImageView depthImageView = VK_NULL_HANDLE;
+    std::vector<VkImage> depthImages;
+    std::vector<VkDeviceMemory> depthImageMemories;
+    std::vector<VkImageView> depthImageViews;
 
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
@@ -160,7 +160,7 @@ private:
     std::vector<VkFence> inFlightFences;
     uint32_t currentFrame = 0;
 
-    std::vector<FrameCaptureBuffer> frameCaptureBuffers;
+    std::vector<OffscreenFrame> offscreenFrames;
     std::vector<RifeOutputBuffer> rifeOutputBuffers;
     std::array<uint32_t, MAX_FRAMES_IN_FLIGHT> pendingCaptureSlotByFrame = { UINT32_MAX, UINT32_MAX };
     bool hasRifeGpuFramePair = false;
@@ -176,6 +176,8 @@ private:
     uint32_t rifePendingInterpolatedOutputIndex = UINT32_MAX;
     uint32_t rifePendingSourceDisplayIndex = UINT32_MAX;
     uint32_t rifeHeldSourceDisplayIndex = UINT32_MAX;
+    uint32_t rifeLastPresentedSourceIndex = UINT32_MAX;
+    bool rifeRenderAheadPending = false;
 #if HAS_NCNN
     std::future<AsyncRifeResult> asyncRifeInference;
     bool rifeInferenceInFlight = false;
@@ -334,9 +336,9 @@ private:
 
     void cleanupFrameProcessingResources();
 
-    uint32_t findAvailableRifeCaptureSlot() const;
+    uint32_t findAvailableOffscreenFrameSlot() const;
 
-    bool captureSwapchainImageForRife(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t captureSlot);
+    bool copyRenderedOffscreenFrameToGpuBuffer(VkCommandBuffer commandBuffer, uint32_t offscreenSlot);
 
     void copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
                                    uint32_t imageIndex,

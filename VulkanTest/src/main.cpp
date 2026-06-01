@@ -442,7 +442,7 @@ void HelloTriangleApplication::createDescriptorSets() {
 }
 
 void HelloTriangleApplication::createLightingDescriptorPool() {
-    uint32_t imageCount = static_cast<uint32_t>(swapChainImages.size());
+    uint32_t imageCount = static_cast<uint32_t>(offscreenFrames.size());
 
     VkDescriptorPoolSize inputAttachmentPoolSize{};
     inputAttachmentPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
@@ -460,7 +460,7 @@ void HelloTriangleApplication::createLightingDescriptorPool() {
 }
 
 void HelloTriangleApplication::createLightingDescriptorSets() {
-    uint32_t imageCount = static_cast<uint32_t>(swapChainImages.size());
+    uint32_t imageCount = static_cast<uint32_t>(offscreenFrames.size());
 
     std::vector<VkDescriptorSetLayout> layouts(imageCount, lightingDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
@@ -629,7 +629,7 @@ void HelloTriangleApplication::createFrameProcessingResources() {
         static_cast<VkDeviceSize>(swapChainExtent.width) *
         static_cast<VkDeviceSize>(swapChainExtent.height) * 4;
 
-    frameCaptureBuffers.resize(std::max<uint32_t>(RIFE_CAPTURE_BUFFER_COUNT, MAX_FRAMES_IN_FLIGHT + 2));
+    offscreenFrames.resize(OFFSCREEN_FRAME_HISTORY_COUNT);
     rifeOutputBuffers.resize(RIFE_OUTPUT_BUFFER_COUNT);
 
     rifeDisplayBufferSize = frameSize;
@@ -638,17 +638,32 @@ void HelloTriangleApplication::createFrameProcessingResources() {
     rifePendingInterpolatedOutputIndex = UINT32_MAX;
     rifePendingSourceDisplayIndex = UINT32_MAX;
     rifeHeldSourceDisplayIndex = UINT32_MAX;
+    rifeLastPresentedSourceIndex = UINT32_MAX;
+    rifeRenderAheadPending = false;
 
-    for (auto& capture : frameCaptureBuffers) {
+    for (auto& frame : offscreenFrames) {
+        createImage(
+            swapChainExtent.width,
+            swapChainExtent.height,
+            1,
+            swapChainImageFormat,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            frame.image,
+            frame.imageMemory
+        );
+        frame.imageView = createImageView(frame.image, swapChainImageFormat, 1);
+
         createBuffer(
             frameSize,
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            capture.gpuBuffer,
-            capture.gpuMemory
+            frame.gpuBuffer,
+            frame.gpuMemory
         );
 
-        capture.size = frameSize;
+        frame.size = frameSize;
     }
 
     for (auto& output : rifeOutputBuffers) {
@@ -709,6 +724,8 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
     rifePendingInterpolatedOutputIndex = UINT32_MAX;
     rifePendingSourceDisplayIndex = UINT32_MAX;
     rifeHeldSourceDisplayIndex = UINT32_MAX;
+    rifeLastPresentedSourceIndex = UINT32_MAX;
+    rifeRenderAheadPending = false;
 #if HAS_NCNN
     rifeInferenceInFlight = false;
     asyncRifePrevFrameIndex = UINT32_MAX;
@@ -718,21 +735,36 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
     rifeCompletedInferenceCount = 0;
 #endif
 
-    for (auto& capture : frameCaptureBuffers) {
-        if (capture.gpuBuffer) {
-            vkDestroyBuffer(device, capture.gpuBuffer, nullptr);
-            capture.gpuBuffer = VK_NULL_HANDLE;
+    for (auto& frame : offscreenFrames) {
+        if (frame.gpuBuffer) {
+            vkDestroyBuffer(device, frame.gpuBuffer, nullptr);
+            frame.gpuBuffer = VK_NULL_HANDLE;
         }
 
-        if (capture.gpuMemory) {
-            vkFreeMemory(device, capture.gpuMemory, nullptr);
-            capture.gpuMemory = VK_NULL_HANDLE;
+        if (frame.gpuMemory) {
+            vkFreeMemory(device, frame.gpuMemory, nullptr);
+            frame.gpuMemory = VK_NULL_HANDLE;
         }
 
-        capture.size = 0;
+        if (frame.imageView) {
+            vkDestroyImageView(device, frame.imageView, nullptr);
+            frame.imageView = VK_NULL_HANDLE;
+        }
+
+        if (frame.image) {
+            vkDestroyImage(device, frame.image, nullptr);
+            frame.image = VK_NULL_HANDLE;
+        }
+
+        if (frame.imageMemory) {
+            vkFreeMemory(device, frame.imageMemory, nullptr);
+            frame.imageMemory = VK_NULL_HANDLE;
+        }
+
+        frame.size = 0;
     }
 
-    frameCaptureBuffers.clear();
+    offscreenFrames.clear();
     pendingCaptureSlotByFrame.fill(UINT32_MAX);
     hasRifeGpuFramePair = false;
     currentRifeGpuFrameIndex = UINT32_MAX;
@@ -743,16 +775,8 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
     lastFramePairCaptureProcessMs = 0.0;
 }
 
-uint32_t HelloTriangleApplication::findAvailableRifeCaptureSlot() const {
-#if HAS_NCNN
-    if (!rifeRealtimeInterpolationEnabled || !rifeModelAttachedToRenderer) {
-        return UINT32_MAX;
-    }
-#else
-    return UINT32_MAX;
-#endif
-
-    for (uint32_t slot = 0; slot < frameCaptureBuffers.size(); ++slot) {
+uint32_t HelloTriangleApplication::findAvailableOffscreenFrameSlot() const {
+    for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
 #if HAS_NCNN
         if (rifeInferenceInFlight &&
             (slot == asyncRifePrevFrameIndex || slot == asyncRifeCurrFrameIndex)) {
@@ -766,6 +790,9 @@ uint32_t HelloTriangleApplication::findAvailableRifeCaptureSlot() const {
             continue;
         }
         if (slot == rifeHeldSourceDisplayIndex) {
+            continue;
+        }
+        if (slot == rifeLastPresentedSourceIndex) {
             continue;
         }
 
@@ -785,25 +812,25 @@ uint32_t HelloTriangleApplication::findAvailableRifeCaptureSlot() const {
     return UINT32_MAX;
 }
 
-bool HelloTriangleApplication::captureSwapchainImageForRife(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t captureSlot) {
-    if (imageIndex >= swapChainImages.size() || captureSlot >= frameCaptureBuffers.size()) {
+bool HelloTriangleApplication::copyRenderedOffscreenFrameToGpuBuffer(VkCommandBuffer commandBuffer, uint32_t offscreenSlot) {
+    if (offscreenSlot >= offscreenFrames.size()) {
         return false;
     }
 
-    VkImageMemoryBarrier toTransferBarrier{};
-    toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.image = swapChainImages[imageIndex];
-    toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransferBarrier.subresourceRange.baseMipLevel = 0;
-    toTransferBarrier.subresourceRange.levelCount = 1;
-    toTransferBarrier.subresourceRange.baseArrayLayer = 0;
-    toTransferBarrier.subresourceRange.layerCount = 1;
-    toTransferBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    VkImageMemoryBarrier renderToTransferBarrier{};
+    renderToTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    renderToTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    renderToTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    renderToTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    renderToTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    renderToTransferBarrier.image = offscreenFrames[offscreenSlot].image;
+    renderToTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    renderToTransferBarrier.subresourceRange.baseMipLevel = 0;
+    renderToTransferBarrier.subresourceRange.levelCount = 1;
+    renderToTransferBarrier.subresourceRange.baseArrayLayer = 0;
+    renderToTransferBarrier.subresourceRange.layerCount = 1;
+    renderToTransferBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    renderToTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
     vkCmdPipelineBarrier(
         commandBuffer,
@@ -815,7 +842,7 @@ bool HelloTriangleApplication::captureSwapchainImageForRife(VkCommandBuffer comm
         0,
         nullptr,
         1,
-        &toTransferBarrier
+        &renderToTransferBarrier
     );
 
     VkBufferImageCopy region{};
@@ -831,9 +858,9 @@ bool HelloTriangleApplication::captureSwapchainImageForRife(VkCommandBuffer comm
 
     vkCmdCopyImageToBuffer(
         commandBuffer,
-        swapChainImages[imageIndex],
+        offscreenFrames[offscreenSlot].image,
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        frameCaptureBuffers[captureSlot].gpuBuffer,
+        offscreenFrames[offscreenSlot].gpuBuffer,
         1,
         &region
     );
@@ -844,7 +871,7 @@ bool HelloTriangleApplication::captureSwapchainImageForRife(VkCommandBuffer comm
     gpuBufferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     gpuBufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     gpuBufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    gpuBufferBarrier.buffer = frameCaptureBuffers[captureSlot].gpuBuffer;
+    gpuBufferBarrier.buffer = offscreenFrames[offscreenSlot].gpuBuffer;
     gpuBufferBarrier.offset = 0;
     gpuBufferBarrier.size = VK_WHOLE_SIZE;
 
@@ -861,34 +888,6 @@ bool HelloTriangleApplication::captureSwapchainImageForRife(VkCommandBuffer comm
         nullptr
     );
 
-    VkImageMemoryBarrier backToPresentBarrier{};
-    backToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    backToPresentBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    backToPresentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    backToPresentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    backToPresentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    backToPresentBarrier.image = swapChainImages[imageIndex];
-    backToPresentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    backToPresentBarrier.subresourceRange.baseMipLevel = 0;
-    backToPresentBarrier.subresourceRange.levelCount = 1;
-    backToPresentBarrier.subresourceRange.baseArrayLayer = 0;
-    backToPresentBarrier.subresourceRange.layerCount = 1;
-    backToPresentBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    backToPresentBarrier.dstAccessMask = 0;
-
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-        0,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &backToPresentBarrier
-    );
-
     return true;
 }
 
@@ -899,7 +898,10 @@ void HelloTriangleApplication::copyRifeBufferToSwapchain(VkCommandBuffer command
                                                          VkPipelineStageFlags sourceStageMask) {
     VkImageMemoryBarrier toTransferDstBarrier{};
     toTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransferDstBarrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    // Presentation overwrites the entire acquired image, so its old contents
+    // are intentionally discarded. This also handles a swapchain image's first
+    // use without treating it as a render target.
+    toTransferDstBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     toTransferDstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     toTransferDstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     toTransferDstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -914,7 +916,7 @@ void HelloTriangleApplication::copyRifeBufferToSwapchain(VkCommandBuffer command
 
     vkCmdPipelineBarrier(
         commandBuffer,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         0,
         0,
@@ -1032,11 +1034,11 @@ void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer comma
 }
 
 void HelloTriangleApplication::displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex) {
-    if (sourceIndex >= frameCaptureBuffers.size()) {
+    if (sourceIndex >= offscreenFrames.size()) {
         return;
     }
 
-    const auto& source = frameCaptureBuffers[sourceIndex];
+    const auto& source = offscreenFrames[sourceIndex];
     if (source.gpuBuffer == VK_NULL_HANDLE || source.size == 0) {
         return;
     }
@@ -1051,13 +1053,16 @@ void HelloTriangleApplication::displayRifeSourceBufferOnSwapchain(VkCommandBuffe
 }
 
 void HelloTriangleApplication::displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    if (rifePendingSourceDisplayIndex >= frameCaptureBuffers.size()) {
+    if (rifePendingSourceDisplayIndex >= offscreenFrames.size()) {
         rifePendingSourceDisplayIndex = UINT32_MAX;
         return;
     }
 
     displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, rifePendingSourceDisplayIndex);
+    rifeLastPresentedSourceIndex = rifePendingSourceDisplayIndex;
     rifePendingSourceDisplayIndex = UINT32_MAX;
+    rifeHeldSourceDisplayIndex = UINT32_MAX;
+    rifeRenderAheadPending = false;
 }
 
 void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
@@ -1068,11 +1073,11 @@ void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
     const uint32_t captureSlot = pendingCaptureSlotByFrame[frameSlot];
     pendingCaptureSlotByFrame[frameSlot] = UINT32_MAX;
 
-    if (captureSlot == UINT32_MAX || captureSlot >= frameCaptureBuffers.size()) {
+    if (captureSlot == UINT32_MAX || captureSlot >= offscreenFrames.size()) {
         return;
     }
 
-    const auto& capture = frameCaptureBuffers[captureSlot];
+    const auto& capture = offscreenFrames[captureSlot];
     if (capture.size == 0) {
         return;
     }
@@ -1087,7 +1092,7 @@ void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
     hasRifeGpuFramePair =
         previousRifeGpuFrameIndex != UINT32_MAX &&
         previousRifeGpuFrameIndex != currentRifeGpuFrameIndex &&
-        previousRifeGpuFrameIndex < frameCaptureBuffers.size();
+        previousRifeGpuFrameIndex < offscreenFrames.size();
 
     ++capturedFrameCount;
 #endif
@@ -1148,10 +1153,15 @@ uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBu
         return UINT32_MAX;
     }
 
+    const uint32_t offscreenSlot = findAvailableOffscreenFrameSlot();
+    if (offscreenSlot == UINT32_MAX) {
+        throw std::runtime_error("offscreen frame history ring is exhausted!");
+    }
+
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+    renderPassInfo.framebuffer = offscreenFramebuffers[offscreenSlot];
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = swapChainExtent;
 
@@ -1227,7 +1237,7 @@ uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBu
     vkCmdBindDescriptorSets(commandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
         lightingPipelineLayout, 0, 1,
-        &lightingDescriptorSets[imageIndex],
+        &lightingDescriptorSets[offscreenSlot],
         0, nullptr); // bind lighting pipeline layout
 
     LightingPushConstants lightingPush{}; // info
@@ -1250,35 +1260,40 @@ uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBu
 
     vkCmdEndRenderPass(commandBuffer);
 
-    const uint32_t captureSlot = findAvailableRifeCaptureSlot();
-    const bool capturedForRife = captureSlot != UINT32_MAX &&
-        captureSwapchainImageForRife(commandBuffer, imageIndex, captureSlot);
-
+    // Frame flow for a real frame:
+    //   scene render -> offscreen image -> device-local NCNN buffer -> swapchain
+    // The swapchain is only a presentation target and is never an inference
+    // capture source. Once this submission's fence signals, the history manager
+    // may pair this frame with its predecessor and start RIFE.
+    if (!copyRenderedOffscreenFrameToGpuBuffer(commandBuffer, offscreenSlot)) {
+        throw std::runtime_error("failed to stage offscreen frame for RIFE!");
+    }
 #if HAS_NCNN
     if (rifeRealtimeInterpolationEnabled &&
-        capturedForRife &&
-        currentRifeGpuFrameIndex < frameCaptureBuffers.size() &&
-        !rifeInferenceInFlight &&
-        !hasRifeDisplayFrame &&
-        rifePendingSourceDisplayIndex == UINT32_MAX) {
-        const auto& previousSource = frameCaptureBuffers[currentRifeGpuFrameIndex];
-        if (previousSource.gpuBuffer != VK_NULL_HANDLE && previousSource.size != 0) {
-            copyRifeBufferToSwapchain(
-                commandBuffer,
-                imageIndex,
-                previousSource.gpuBuffer,
-                VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_TRANSFER_BIT
-            );
-        }
+        rifeModelAttachedToRenderer &&
+        rifeLastPresentedSourceIndex < offscreenFrames.size()) {
+        // Render ahead without advancing presentation: N+1 is now available
+        // for inference, but N stays visible until N+0.5 has been presented.
+        displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, rifeLastPresentedSourceIndex);
+        rifeHeldSourceDisplayIndex = rifeLastPresentedSourceIndex;
+        rifeRenderAheadPending = true;
     }
+    else
 #endif
+    {
+        displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, offscreenSlot);
+#if HAS_NCNN
+        if (rifeRealtimeInterpolationEnabled && rifeModelAttachedToRenderer) {
+            rifeLastPresentedSourceIndex = offscreenSlot;
+        }
+#endif
+    }
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");
     }
 
-    return capturedForRife ? captureSlot : UINT32_MAX;
+    return offscreenSlot;
 }
 
 void HelloTriangleApplication::createSyncObjects() {
@@ -1322,6 +1337,8 @@ void HelloTriangleApplication::waitForAsyncRifeInference() {
     rifePendingInterpolatedOutputIndex = UINT32_MAX;
     rifePendingSourceDisplayIndex = UINT32_MAX;
     rifeHeldSourceDisplayIndex = UINT32_MAX;
+    rifeLastPresentedSourceIndex = UINT32_MAX;
+    rifeRenderAheadPending = false;
     asyncRifePrevFrameIndex = UINT32_MAX;
     asyncRifeCurrFrameIndex = UINT32_MAX;
     asyncRifeOutputIndex = UINT32_MAX;
@@ -1379,6 +1396,9 @@ void HelloTriangleApplication::pollAsyncRifeInference() {
     std::cerr << "[RIFE] async GPU interpolation failed"
               << " (code=" << result.processRet
               << ", inference_ms=" << result.inferenceMs << ")" << std::endl;
+    // Do not leave the scheduler holding N forever if interpolation fails.
+    // Advance to N+1 on the next presentation tick and resume render-ahead.
+    rifePendingSourceDisplayIndex = result.currentSourceIndex;
 }
 
 bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
@@ -1387,8 +1407,8 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
         rifeInferenceInFlight ||
         !hasRifeGpuFramePair ||
         capturedFrameCount < 2 ||
-        previousRifeGpuFrameIndex >= frameCaptureBuffers.size() ||
-        currentRifeGpuFrameIndex >= frameCaptureBuffers.size() ||
+        previousRifeGpuFrameIndex >= offscreenFrames.size() ||
+        currentRifeGpuFrameIndex >= offscreenFrames.size() ||
         rifeOutputBuffers.empty() ||
         rifeDisplayBufferSize == 0) {
         return false;
@@ -1413,12 +1433,12 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
 
     const uint32_t prevIndex = previousRifeGpuFrameIndex;
     const uint32_t currIndex = currentRifeGpuFrameIndex;
-    const VkBuffer prevBuffer = frameCaptureBuffers[prevIndex].gpuBuffer;
-    const VkDeviceMemory prevMemory = frameCaptureBuffers[prevIndex].gpuMemory;
-    const VkDeviceSize prevSize = frameCaptureBuffers[prevIndex].size;
-    const VkBuffer currBuffer = frameCaptureBuffers[currIndex].gpuBuffer;
-    const VkDeviceMemory currMemory = frameCaptureBuffers[currIndex].gpuMemory;
-    const VkDeviceSize currSize = frameCaptureBuffers[currIndex].size;
+    const VkBuffer prevBuffer = offscreenFrames[prevIndex].gpuBuffer;
+    const VkDeviceMemory prevMemory = offscreenFrames[prevIndex].gpuMemory;
+    const VkDeviceSize prevSize = offscreenFrames[prevIndex].size;
+    const VkBuffer currBuffer = offscreenFrames[currIndex].gpuBuffer;
+    const VkDeviceMemory currMemory = offscreenFrames[currIndex].gpuMemory;
+    const VkDeviceSize currSize = offscreenFrames[currIndex].size;
     const VkBuffer outBuffer = rifeOutputBuffers[outputIndex].gpuBuffer;
     const VkDeviceMemory outMemory = rifeOutputBuffers[outputIndex].gpuMemory;
     const VkDeviceSize outSize = rifeOutputBuffers[outputIndex].size;
@@ -1623,12 +1643,17 @@ void HelloTriangleApplication::drawFrame() {
         mode = PresentationCommandMode::DisplayInterpolatedFrame;
     }
     else if (rifeRealtimeInterpolationEnabled &&
-             rifePendingSourceDisplayIndex < frameCaptureBuffers.size()) {
+             rifePendingSourceDisplayIndex < offscreenFrames.size()) {
         mode = PresentationCommandMode::DisplayCapturedSourceFrame;
     }
     else if (rifeRealtimeInterpolationEnabled &&
              rifeInferenceInFlight &&
-             rifeHeldSourceDisplayIndex < frameCaptureBuffers.size()) {
+             rifeHeldSourceDisplayIndex < offscreenFrames.size()) {
+        mode = PresentationCommandMode::DisplayHeldSourceFrame;
+    }
+    else if (rifeRealtimeInterpolationEnabled &&
+             rifeRenderAheadPending &&
+             rifeHeldSourceDisplayIndex < offscreenFrames.size()) {
         mode = PresentationCommandMode::DisplayHeldSourceFrame;
     }
 #endif

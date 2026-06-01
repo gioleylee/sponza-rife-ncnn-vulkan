@@ -329,9 +329,9 @@ void HelloTriangleApplication::createSwapChain() {
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // Swapchain images are presentation-only destinations. Scene rendering and
+    // RIFE input history never use them as render targets or capture sources.
+    createInfo.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
     uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
@@ -398,11 +398,10 @@ void HelloTriangleApplication::recreateSwapChain() {
 }
 
 void HelloTriangleApplication::cleanupSwapChain() {
-    cleanupFrameProcessingResources();
-
-    for (auto framebuffer : swapChainFramebuffers) {
+    for (auto framebuffer : offscreenFramebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
+    offscreenFramebuffers.clear();
 
     if (lightingDescriptorPool) {
         vkDestroyDescriptorPool(device, lightingDescriptorPool, nullptr);
@@ -415,22 +414,38 @@ void HelloTriangleApplication::cleanupSwapChain() {
         vkDestroyImage(device, gNormalImages[i], nullptr);
         vkFreeMemory(device, gNormalImageMemories[i], nullptr);
     }
+    gNormalImageViews.clear();
+    gNormalImages.clear();
+    gNormalImageMemories.clear();
 
     for (size_t i = 0; i < gAlbedoImageViews.size(); ++i) {
         vkDestroyImageView(device, gAlbedoImageViews[i], nullptr);
         vkDestroyImage(device, gAlbedoImages[i], nullptr);
         vkFreeMemory(device, gAlbedoImageMemories[i], nullptr);
     }
+    gAlbedoImageViews.clear();
+    gAlbedoImages.clear();
+    gAlbedoImageMemories.clear();
 
     for (size_t i = 0; i < gPositionImageViews.size(); ++i) {
         vkDestroyImageView(device, gPositionImageViews[i], nullptr);
         vkDestroyImage(device, gPositionImages[i], nullptr);
         vkFreeMemory(device, gPositionImageMemories[i], nullptr);
     }
+    gPositionImageViews.clear();
+    gPositionImages.clear();
+    gPositionImageMemories.clear();
 
-    vkDestroyImageView(device, depthImageView, nullptr);
-    vkDestroyImage(device, depthImage, nullptr);
-    vkFreeMemory(device, depthImageMemory, nullptr);
+    for (size_t i = 0; i < depthImageViews.size(); ++i) {
+        vkDestroyImageView(device, depthImageViews[i], nullptr);
+        vkDestroyImage(device, depthImages[i], nullptr);
+        vkFreeMemory(device, depthImageMemories[i], nullptr);
+    }
+    depthImageViews.clear();
+    depthImages.clear();
+    depthImageMemories.clear();
+
+    cleanupFrameProcessingResources();
 
     for (auto imageView : swapChainImageViews) {
         vkDestroyImageView(device, imageView, nullptr);

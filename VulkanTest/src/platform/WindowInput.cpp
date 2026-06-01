@@ -105,6 +105,8 @@ void HelloTriangleApplication::processInput(float deltaTime) {
             rifePendingInterpolatedOutputIndex = UINT32_MAX;
             rifePendingSourceDisplayIndex = UINT32_MAX;
             rifeHeldSourceDisplayIndex = UINT32_MAX;
+            rifeLastPresentedSourceIndex = UINT32_MAX;
+            rifeRenderAheadPending = false;
             for (auto& output : rifeOutputBuffers) {
                 output.ready = false;
                 output.inUseByInference = false;

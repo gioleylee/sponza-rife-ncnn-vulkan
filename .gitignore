@@ -35,3 +35,4 @@ out/
 !**/assets/**/*.obj
 
 AGENTS.md
+MAIN_CPP_REFACTOR_PLAN.md

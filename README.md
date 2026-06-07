@@ -1,8 +1,8 @@
-# Vulkan + RIFE Sponza Renderer with NCNN
+# Vulkan NCNN Sponza Renderer
 
 ## Overview
 
-This project is a Vulkan-based Sponza renderer with real-time frame interpolation using RIFE and NCNN.
+This project is a Vulkan-based Sponza renderer with NCNN-backed real-time frame interpolation.
 
 ---
 
@@ -51,4 +51,4 @@ Linker > Input > Additional Dependencies
  - SPIRV-Tools-optd.lib
  - assimp-vc143-mt.lib
 
-RIFE model files are loaded from `VulkanTest/assets/models/rife-v4`.
+NCNN interpolation model files are loaded from `VulkanTest/assets/nn_models/rife-v4`.

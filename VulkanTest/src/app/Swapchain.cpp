@@ -1,5 +1,5 @@
 // Owns swapchain creation, image views, framebuffers, cleanup, and recreation.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <vector>
 
-void VulkanRifeRendererApp::createSwapChain() {
+void VulkanNcnnRenderer::createSwapChain() {
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
 
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -65,7 +65,7 @@ void VulkanRifeRendererApp::createSwapChain() {
     swapChainExtent = extent;
 }
 
-void VulkanRifeRendererApp::recreateSwapChain() {
+void VulkanNcnnRenderer::recreateSwapChain() {
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     while (width == 0 || height == 0) {
@@ -100,7 +100,7 @@ void VulkanRifeRendererApp::recreateSwapChain() {
     createLightingDescriptorSets();
 }
 
-void VulkanRifeRendererApp::cleanupSwapChain() {
+void VulkanNcnnRenderer::cleanupSwapChain() {
     cleanupFramebuffers();
 
     if (lightingDescriptorPool) {
@@ -121,7 +121,7 @@ void VulkanRifeRendererApp::cleanupSwapChain() {
     vkDestroySwapchainKHR(device, swapChain, nullptr);
 }
 
-void VulkanRifeRendererApp::createImageViews() {
+void VulkanNcnnRenderer::createImageViews() {
     swapChainImageViews.resize(swapChainImages.size());
 
     for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -146,7 +146,7 @@ void VulkanRifeRendererApp::createImageViews() {
     }
 }
 
-VkSurfaceFormatKHR VulkanRifeRendererApp::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+VkSurfaceFormatKHR VulkanNcnnRenderer::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
     for (const auto& availableFormat : availableFormats) {
         if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             return availableFormat;
@@ -156,7 +156,7 @@ VkSurfaceFormatKHR VulkanRifeRendererApp::chooseSwapSurfaceFormat(const std::vec
     return availableFormats[0];
 }
 
-VkPresentModeKHR VulkanRifeRendererApp::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+VkPresentModeKHR VulkanNcnnRenderer::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
     for (const auto& availablePresentMode : availablePresentModes) {
         if (availablePresentMode == VK_PRESENT_MODE_FIFO_KHR) {
             return availablePresentMode;
@@ -166,7 +166,7 @@ VkPresentModeKHR VulkanRifeRendererApp::chooseSwapPresentMode(const std::vector<
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D VulkanRifeRendererApp::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+VkExtent2D VulkanNcnnRenderer::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return capabilities.currentExtent;
     }
@@ -186,7 +186,7 @@ VkExtent2D VulkanRifeRendererApp::chooseSwapExtent(const VkSurfaceCapabilitiesKH
     }
 }
 
-SwapChainSupportDetails VulkanRifeRendererApp::querySwapChainSupport(VkPhysicalDevice device) {
+SwapChainSupportDetails VulkanNcnnRenderer::querySwapChainSupport(VkPhysicalDevice device) {
     SwapChainSupportDetails details;
 
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);

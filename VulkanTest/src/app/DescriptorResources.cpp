@@ -1,5 +1,5 @@
 // Owns descriptor set layouts, pools, allocation, and descriptor updates.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <vulkan/vulkan.h>
 
@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <vector>
 
-void VulkanRifeRendererApp::createDescriptorSetLayout() {
+void VulkanNcnnRenderer::createDescriptorSetLayout() {
     VkDescriptorSetLayoutBinding uboLayoutBinding{}; // UBO
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorCount = 1;
@@ -45,7 +45,7 @@ void VulkanRifeRendererApp::createDescriptorSetLayout() {
     } // creation
 }
 
-void VulkanRifeRendererApp::createLightingDescriptorSetLayout() {
+void VulkanNcnnRenderer::createLightingDescriptorSetLayout() {
     VkDescriptorSetLayoutBinding normalInputBinding{};
     normalInputBinding.binding = 0;
     normalInputBinding.descriptorCount = 1;
@@ -81,7 +81,7 @@ void VulkanRifeRendererApp::createLightingDescriptorSetLayout() {
     }
 }
 
-void VulkanRifeRendererApp::createDescriptorPool() {
+void VulkanNcnnRenderer::createDescriptorPool() {
     uint32_t materialCount =
         static_cast<uint32_t>(std::max<size_t>(1, materials.size()));
 
@@ -108,7 +108,7 @@ void VulkanRifeRendererApp::createDescriptorPool() {
     } // pool creation
 }
 
-void VulkanRifeRendererApp::createDescriptorSets() {
+void VulkanNcnnRenderer::createDescriptorSets() {
     uint32_t materialCount = static_cast<uint32_t>(std::max<size_t>(1, materials.size()));
     uint32_t setsPerFrame = materialCount + 1;
     uint32_t totalSets = MAX_FRAMES_IN_FLIGHT * setsPerFrame; // per-frame materials plus cube
@@ -235,7 +235,7 @@ void VulkanRifeRendererApp::createDescriptorSets() {
     }
 }
 
-void VulkanRifeRendererApp::createLightingDescriptorPool() {
+void VulkanNcnnRenderer::createLightingDescriptorPool() {
     uint32_t imageCount = static_cast<uint32_t>(offscreenFrames.size());
 
     VkDescriptorPoolSize inputAttachmentPoolSize{};
@@ -253,7 +253,7 @@ void VulkanRifeRendererApp::createLightingDescriptorPool() {
     }
 }
 
-void VulkanRifeRendererApp::createLightingDescriptorSets() {
+void VulkanNcnnRenderer::createLightingDescriptorSets() {
     uint32_t imageCount = static_cast<uint32_t>(offscreenFrames.size());
 
     std::vector<VkDescriptorSetLayout> layouts(imageCount, lightingDescriptorSetLayout);

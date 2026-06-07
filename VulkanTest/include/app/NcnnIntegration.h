@@ -25,22 +25,22 @@ void cleanupFrameProcessingResources();
 
 uint32_t findAvailableOffscreenFrameSlot() const;
 
-void copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
+void copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer,
                                uint32_t imageIndex,
                                VkBuffer sourceBuffer,
                                VkAccessFlags sourceAccessMask,
                                VkPipelineStageFlags sourceStageMask);
 
-void displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+void displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
-void displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex);
+void displayNcnnSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex);
 
-void displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+void displayCapturedNcnnSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 #if HAS_NCNN
-void waitForAsyncRifeInference();
+void waitForAsyncNcnnInference();
 
-void pollAsyncRifeInference();
+void pollAsyncNcnnInference();
 
-bool submitAsyncRifeInferenceIfReady();
+bool submitAsyncNcnnInferenceIfReady();
 #endif

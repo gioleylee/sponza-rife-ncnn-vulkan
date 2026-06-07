@@ -2,11 +2,11 @@
 #include <exception>
 #include <iostream>
 
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 int main() {
     try {
-        VulkanRifeRendererApp app;
+        VulkanNcnnRenderer app;
         app.run();
     }
     catch (const std::exception& e) {

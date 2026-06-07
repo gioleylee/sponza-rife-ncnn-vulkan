@@ -51,19 +51,19 @@
 #endif
 
 #if HAS_NCNN && defined(HAS_WARP_VK_SHADER)
-#define HAS_RIFE_WARP_VK HAS_WARP_VK_SHADER
+#define HAS_NCNN_WARP_VK HAS_WARP_VK_SHADER
 #elif __has_include("warp.comp.hex.h") && __has_include("warp_pack4.comp.hex.h") && __has_include("warp_pack8.comp.hex.h")
-#define HAS_RIFE_WARP_VK 1
+#define HAS_NCNN_WARP_VK 1
 #else
-#define HAS_RIFE_WARP_VK 0
+#define HAS_NCNN_WARP_VK 0
 #endif
 
-#include "RifeRunner.h"
+#include "NcnnFrameInterpolator.h"
 
 #include "AppTypes.h"
 #include "validation_layers.h"
 
-class VulkanRifeRendererApp {
+class VulkanNcnnRenderer {
 public:
     void run();
 
@@ -160,16 +160,16 @@ private:
     uint32_t currentFrame = 0;
 
     std::vector<OffscreenFrame> offscreenFrames;
-    std::vector<RifeOutputBuffer> rifeOutputBuffers;
+    std::vector<NcnnOutputBuffer> ncnnOutputBuffers;
     std::array<uint32_t, MAX_FRAMES_IN_FLIGHT> pendingCaptureSlotByFrame = { UINT32_MAX, UINT32_MAX };
-    RifePresentationState rifePresentationState;
+    NcnnPresentationState ncnnPresentationState;
     uint64_t capturedFrameCount = 0;
     double previousFrameCaptureProcessMs = 0.0;
     double lastFrameCaptureProcessMs = 0.0;
     double lastFramePairCaptureProcessMs = 0.0;
-    VkDeviceSize rifeDisplayBufferSize = 0;
+    VkDeviceSize ncnnDisplayBufferSize = 0;
 #if HAS_NCNN
-    std::future<AsyncRifeResult> asyncRifeInference;
+    std::future<AsyncNcnnResult> asyncNcnnInference;
 #endif
 
     bool framebufferResized = false;
@@ -216,12 +216,12 @@ private:
     float autoPanSpeedDegreesPerSecond = 8.0f;
 
 #if HAS_NCNN
-    RifeRunner rifeRunner;
+    NcnnFrameInterpolator ncnnFrameInterpolator;
     ncnn::Net net;
     bool ncnnInitialized = false;
     int ncnnRendererDeviceIndex = -1;
     bool ncnnModelLoaded = false;
-    bool rifeModelAttachedToRenderer = false;
+    bool ncnnModelAttachedToRenderer = false;
     bool rKeyPressed = false;
 #endif
 
@@ -230,6 +230,22 @@ private:
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 
     void initVulkan();
+
+    void initializeCoreVulkan();
+
+    void initializeSwapchainResources();
+
+    void initializeRenderResources();
+
+    void initializeSceneResources();
+
+    void initializeDescriptorResources();
+
+    void initializeCommandResources();
+
+    void initializeSyncResources();
+
+    void initializeOptionalNcnn();
 
     void mainLoop();
 
@@ -277,7 +293,7 @@ private:
 
     void createSyncObjects();
 
-#include "RifeIntegration.h"
+#include "NcnnIntegration.h"
 
     void updateUniformBuffer(uint32_t currentImage);
 
@@ -291,7 +307,7 @@ private:
                                       uint32_t imageIndex,
                                       PresentationCommandMode mode);
 
-    void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedRifeSlot);
+    void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot);
 
     void handlePresentation(uint32_t imageIndex);
 

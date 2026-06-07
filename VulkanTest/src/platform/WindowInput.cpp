@@ -10,22 +10,22 @@
 #include <cstdint>
 #include <iostream>
 
-void VulkanRifeRendererApp::initWindow() {
+void VulkanNcnnRenderer::initWindow() {
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanTestSponza", nullptr, nullptr);
+    window = glfwCreateWindow(WIDTH, HEIGHT, "VulkanNcnnRenderer", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 }
 
-void VulkanRifeRendererApp::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-    auto app = reinterpret_cast<VulkanRifeRendererApp*>(glfwGetWindowUserPointer(window));
+void VulkanNcnnRenderer::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    auto app = reinterpret_cast<VulkanNcnnRenderer*>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
 }
 
-void VulkanRifeRendererApp::updateCameraFrontFromAngles() {
+void VulkanNcnnRenderer::updateCameraFrontFromAngles() {
     float radYaw = glm::radians(cameraYaw);
     float radPitch = glm::radians(cameraPitch);
     glm::vec3 front;
@@ -35,7 +35,7 @@ void VulkanRifeRendererApp::updateCameraFrontFromAngles() {
     cameraFront = glm::normalize(front);
 }
 
-void VulkanRifeRendererApp::processInput(float deltaTime) {
+void VulkanNcnnRenderer::processInput(float deltaTime) {
     float velocity = cameraSpeed * deltaTime;
     bool cameraOrientationChanged = false;
 
@@ -100,11 +100,11 @@ void VulkanRifeRendererApp::processInput(float deltaTime) {
 #if HAS_NCNN
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (!rKeyPressed) {
-            const bool enableRifeInterpolation = !rifePresentationState.rifeRealtimeInterpolationEnabled;
-            waitForAsyncRifeInference();
-            rifePresentationState = RifePresentationState{};
-            rifePresentationState.rifeRealtimeInterpolationEnabled = enableRifeInterpolation;
-            for (auto& output : rifeOutputBuffers) {
+            const bool enableNcnnInterpolation = !ncnnPresentationState.ncnnRealtimeInterpolationEnabled;
+            waitForAsyncNcnnInference();
+            ncnnPresentationState = NcnnPresentationState{};
+            ncnnPresentationState.ncnnRealtimeInterpolationEnabled = enableNcnnInterpolation;
+            for (auto& output : ncnnOutputBuffers) {
                 output.ready = false;
                 output.inUseByInference = false;
                 output.inUseByGraphics = false;
@@ -116,8 +116,8 @@ void VulkanRifeRendererApp::processInput(float deltaTime) {
             lastFrameCaptureProcessMs = 0.0;
             lastFramePairCaptureProcessMs = 0.0;
             pendingCaptureSlotByFrame.fill(UINT32_MAX);
-            std::cout << "[RIFE] realtime interpolation "
-                      << (rifePresentationState.rifeRealtimeInterpolationEnabled ? "enabled" : "disabled")
+            std::cout << "[NCNN] realtime interpolation "
+                      << (ncnnPresentationState.ncnnRealtimeInterpolationEnabled ? "enabled" : "disabled")
                       << std::endl;
             rKeyPressed = true;
         }
@@ -172,7 +172,7 @@ void VulkanRifeRendererApp::processInput(float deltaTime) {
     }
 }
 
-void VulkanRifeRendererApp::processMouseLook() {
+void VulkanNcnnRenderer::processMouseLook() {
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) != GLFW_PRESS) {
         firstMouse = true;
         return;

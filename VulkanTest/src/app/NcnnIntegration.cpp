@@ -1,5 +1,5 @@
-// Owns NCNN/RIFE initialization, frame-processing resources, async inference, and RIFE cleanup.
-#include "VulkanRifeRendererApp.h"
+// Owns NCNN initialization, frame-processing resources, async inference, and cleanup.
+#include "VulkanNcnnRenderer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -11,47 +11,47 @@
 
 namespace {
 
-void resetRifeDisplayState(RifePresentationState& state) {
-    state.hasRifeDisplayFrame = false;
-    state.nextRifeOutputSequence = 1;
-    state.rifePendingInterpolatedOutputIndex = UINT32_MAX;
-    state.rifePendingSourceDisplayIndex = UINT32_MAX;
-    state.rifeHeldSourceDisplayIndex = UINT32_MAX;
-    state.rifeLastPresentedSourceIndex = UINT32_MAX;
-    state.rifeRenderAheadPending = false;
+void resetNcnnDisplayState(NcnnPresentationState& state) {
+    state.hasNcnnDisplayFrame = false;
+    state.nextNcnnOutputSequence = 1;
+    state.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
+    state.ncnnPendingSourceDisplayIndex = UINT32_MAX;
+    state.ncnnHeldSourceDisplayIndex = UINT32_MAX;
+    state.ncnnLastPresentedSourceIndex = UINT32_MAX;
+    state.ncnnRenderAheadPending = false;
 }
 
-void resetRifeFramePairState(RifePresentationState& state) {
-    state.hasRifeGpuFramePair = false;
-    state.currentRifeGpuFrameIndex = UINT32_MAX;
-    state.previousRifeGpuFrameIndex = UINT32_MAX;
+void resetNcnnFramePairState(NcnnPresentationState& state) {
+    state.hasNcnnGpuFramePair = false;
+    state.currentNcnnGpuFrameIndex = UINT32_MAX;
+    state.previousNcnnGpuFrameIndex = UINT32_MAX;
 }
 
-void resetRifeAsyncState(RifePresentationState& state) {
-    state.rifeInferenceInFlight = false;
-    state.asyncRifePrevFrameIndex = UINT32_MAX;
-    state.asyncRifeCurrFrameIndex = UINT32_MAX;
-    state.asyncRifeOutputIndex = UINT32_MAX;
+void resetNcnnAsyncState(NcnnPresentationState& state) {
+    state.ncnnInferenceInFlight = false;
+    state.asyncNcnnPrevFrameIndex = UINT32_MAX;
+    state.asyncNcnnCurrFrameIndex = UINT32_MAX;
+    state.asyncNcnnOutputIndex = UINT32_MAX;
 }
 
-void resetRifeAdaptiveInferenceState(RifePresentationState& state) {
-    resetRifeAsyncState(state);
-    state.rifeInferenceScaleDivisor = RIFE_INITIAL_INFERENCE_SCALE_DIVISOR;
-    state.rifeCompletedInferenceCount = 0;
+void resetNcnnAdaptiveInferenceState(NcnnPresentationState& state) {
+    resetNcnnAsyncState(state);
+    state.ncnnInferenceScaleDivisor = NCNN_INITIAL_INFERENCE_SCALE_DIVISOR;
+    state.ncnnCompletedInferenceCount = 0;
 }
 
-void resetRifePendingPresentationState(RifePresentationState& state) {
-    state.rifePendingInterpolatedOutputIndex = UINT32_MAX;
-    state.rifePendingSourceDisplayIndex = UINT32_MAX;
-    state.rifeHeldSourceDisplayIndex = UINT32_MAX;
-    state.rifeLastPresentedSourceIndex = UINT32_MAX;
-    state.rifeRenderAheadPending = false;
+void resetNcnnPendingPresentationState(NcnnPresentationState& state) {
+    state.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
+    state.ncnnPendingSourceDisplayIndex = UINT32_MAX;
+    state.ncnnHeldSourceDisplayIndex = UINT32_MAX;
+    state.ncnnLastPresentedSourceIndex = UINT32_MAX;
+    state.ncnnRenderAheadPending = false;
 }
 
 }
 
 #if HAS_NCNN
-int VulkanRifeRendererApp::findNcnnDeviceIndexForRenderer() const {
+int VulkanNcnnRenderer::findNcnnDeviceIndexForRenderer() const {
     VkPhysicalDeviceProperties rendererProperties{};
     vkGetPhysicalDeviceProperties(physicalDevice, &rendererProperties);
 
@@ -84,12 +84,12 @@ int VulkanRifeRendererApp::findNcnnDeviceIndexForRenderer() const {
     return gpuCount > 0 ? 0 : -1;
 }
 
-void VulkanRifeRendererApp::applyNcnnVulkanOptions() {
+void VulkanNcnnRenderer::applyNcnnVulkanOptions() {
     const int gpuCount = ncnn::get_gpu_count();
     const bool hasSelectedGpu =
         ncnnRendererDeviceIndex >= 0 && ncnnRendererDeviceIndex < gpuCount;
 
-    net.opt.use_vulkan_compute = hasSelectedGpu && HAS_RIFE_WARP_VK;
+    net.opt.use_vulkan_compute = hasSelectedGpu && HAS_NCNN_WARP_VK;
     net.opt.use_fp16_packed = true;
     net.opt.use_fp16_storage = true;
     net.opt.use_fp16_arithmetic = true;
@@ -98,7 +98,7 @@ void VulkanRifeRendererApp::applyNcnnVulkanOptions() {
     net.opt.use_cooperative_matrix = true;
 }
 
-void VulkanRifeRendererApp::initNcnn() {
+void VulkanNcnnRenderer::initNcnn() {
     if (ncnnInitialized) {
         return;
     }
@@ -109,8 +109,8 @@ void VulkanRifeRendererApp::initNcnn() {
     ncnnRendererDeviceIndex = findNcnnDeviceIndexForRenderer();
     applyNcnnVulkanOptions();
     net.opt.num_threads = 1;
-    if (gpuCount > 0 && !HAS_RIFE_WARP_VK) {
-        std::cout << "[NCNN] rife warp vulkan shaders not found; forcing CPU inference path" << std::endl;
+    if (gpuCount > 0 && !HAS_NCNN_WARP_VK) {
+        std::cout << "[NCNN] NCNN warp Vulkan shaders not found; forcing CPU inference path" << std::endl;
     }
     ncnnInitialized = true;
 
@@ -119,22 +119,22 @@ void VulkanRifeRendererApp::initNcnn() {
               << ", vulkan_compute=" << (net.opt.use_vulkan_compute ? "on" : "off") << ")" << std::endl;
 }
 
-void VulkanRifeRendererApp::shutdownNcnn() {
+void VulkanNcnnRenderer::shutdownNcnn() {
     if (!ncnnInitialized) {
         return;
     }
 
     net.clear();
-    rifeRunner.reset();
+    ncnnFrameInterpolator.reset();
     ncnn::destroy_gpu_instance();
 
     ncnnInitialized = false;
     ncnnRendererDeviceIndex = -1;
     ncnnModelLoaded = false;
-    rifeModelAttachedToRenderer = false;
+    ncnnModelAttachedToRenderer = false;
 }
 
-bool VulkanRifeRendererApp::loadNcnnModel(const std::string& paramPath, const std::string& binPath) {
+bool VulkanNcnnRenderer::loadNcnnModel(const std::string& paramPath, const std::string& binPath) {
     if (!ncnnInitialized) {
         initNcnn();
     }
@@ -143,7 +143,7 @@ bool VulkanRifeRendererApp::loadNcnnModel(const std::string& paramPath, const st
     // Vulkan pipelines. Reapply them before every load.
     applyNcnnVulkanOptions();
 
-    if (!rifeRunner.initialize(net, paramPath, binPath, device, ncnnRendererDeviceIndex)) {
+    if (!ncnnFrameInterpolator.initialize(net, paramPath, binPath, device, ncnnRendererDeviceIndex)) {
         return false;
     }
 
@@ -153,7 +153,7 @@ bool VulkanRifeRendererApp::loadNcnnModel(const std::string& paramPath, const st
     return true;
 }
 
-void VulkanRifeRendererApp::tryLoadDefaultNcnnModel() {
+void VulkanNcnnRenderer::tryLoadDefaultNcnnModel() {
     const std::string optimizedParam = "assets/nn_models/rife-v4/flownet-opt.param";
     const std::string optimizedBin = "assets/nn_models/rife-v4/flownet-opt.bin";
     const std::string defaultParam = "assets/nn_models/rife-v4/flownet.param";
@@ -165,7 +165,7 @@ void VulkanRifeRendererApp::tryLoadDefaultNcnnModel() {
     const std::string& binPath = hasOptimizedModel ? optimizedBin : defaultBin;
 
     if (!std::filesystem::exists(paramPath) || !std::filesystem::exists(binPath)) {
-        std::cout << "[NCNN] default RIFE model not found: "
+        std::cout << "[NCNN] default interpolation model not found: "
                   << paramPath << " and " << binPath << std::endl;
         return;
     }
@@ -177,19 +177,19 @@ void VulkanRifeRendererApp::tryLoadDefaultNcnnModel() {
         ncnn::Extractor extractor = net.create_extractor();
         (void)extractor;
         std::cout << "[NCNN] extractor created successfully" << std::endl;
-        rifeModelAttachedToRenderer = rifeRunner.isReady();
-        if (rifeModelAttachedToRenderer) {
-            std::cout << "[RIFE] model attached to Vulkan renderer" << std::endl;
+        ncnnModelAttachedToRenderer = ncnnFrameInterpolator.isReady();
+        if (ncnnModelAttachedToRenderer) {
+            std::cout << "[NCNN] model attached to Vulkan renderer" << std::endl;
         }
     }
     else {
-        std::cout << "[NCNN] failed to load default RIFE model" << std::endl;
+        std::cout << "[NCNN] failed to load default interpolation model" << std::endl;
     }
 }
 #endif
 
 #if defined(_WIN32)
-bool VulkanRifeRendererApp::createExportableFrameBuffer(VkDeviceSize size,
+bool VulkanNcnnRenderer::createExportableFrameBuffer(VkDeviceSize size,
                                                         VkBuffer& buffer,
                                                         VkDeviceMemory& bufferMemory,
                                                         HANDLE& externalHandle) {
@@ -266,7 +266,7 @@ bool VulkanRifeRendererApp::createExportableFrameBuffer(VkDeviceSize size,
 }
 #endif
 
-void VulkanRifeRendererApp::createFrameProcessingResources() {
+void VulkanNcnnRenderer::createFrameProcessingResources() {
     cleanupFrameProcessingResources();
 
     const VkDeviceSize frameSize =
@@ -274,10 +274,10 @@ void VulkanRifeRendererApp::createFrameProcessingResources() {
         static_cast<VkDeviceSize>(swapChainExtent.height) * 4;
 
     offscreenFrames.resize(OFFSCREEN_FRAME_HISTORY_COUNT);
-    rifeOutputBuffers.resize(RIFE_OUTPUT_BUFFER_COUNT);
+    ncnnOutputBuffers.resize(NCNN_OUTPUT_BUFFER_COUNT);
 
-    rifeDisplayBufferSize = frameSize;
-    resetRifeDisplayState(rifePresentationState);
+    ncnnDisplayBufferSize = frameSize;
+    resetNcnnDisplayState(ncnnPresentationState);
 
     const auto toUnormFormat = [](VkFormat format) {
         switch (format) {
@@ -289,9 +289,9 @@ void VulkanRifeRendererApp::createFrameProcessingResources() {
             return format;
         }
     };
-    const VkFormat rifeInputFormat = toUnormFormat(swapChainImageFormat);
+    const VkFormat ncnnInputFormat = toUnormFormat(swapChainImageFormat);
     const VkImageCreateFlags offscreenFlags =
-        rifeInputFormat != swapChainImageFormat ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
+        ncnnInputFormat != swapChainImageFormat ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
 
     for (auto& frame : offscreenFrames) {
         createImage(
@@ -307,12 +307,12 @@ void VulkanRifeRendererApp::createFrameProcessingResources() {
             offscreenFlags
         );
         frame.imageView = createImageView(frame.image, swapChainImageFormat, 1);
-        frame.rifeInputImageView = createImageView(frame.image, rifeInputFormat, 1);
+        frame.ncnnInputImageView = createImageView(frame.image, ncnnInputFormat, 1);
 
         frame.size = frameSize;
     }
 
-    for (auto& output : rifeOutputBuffers) {
+    for (auto& output : ncnnOutputBuffers) {
         createBuffer(
             frameSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -330,19 +330,19 @@ void VulkanRifeRendererApp::createFrameProcessingResources() {
     }
 
     pendingCaptureSlotByFrame.fill(UINT32_MAX);
-    resetRifeFramePairState(rifePresentationState);
+    resetNcnnFramePairState(ncnnPresentationState);
     capturedFrameCount = 0;
     previousFrameCaptureProcessMs = 0.0;
     lastFrameCaptureProcessMs = 0.0;
     lastFramePairCaptureProcessMs = 0.0;
 }
 
-void VulkanRifeRendererApp::cleanupFrameProcessingResources() {
+void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
 #if HAS_NCNN
-    waitForAsyncRifeInference();
+    waitForAsyncNcnnInference();
 #endif
 
-    for (auto& output : rifeOutputBuffers) {
+    for (auto& output : ncnnOutputBuffers) {
         if (output.gpuBuffer) {
             vkDestroyBuffer(device, output.gpuBuffer, nullptr);
             output.gpuBuffer = VK_NULL_HANDLE;
@@ -361,11 +361,11 @@ void VulkanRifeRendererApp::cleanupFrameProcessingResources() {
         output.sequence = 0;
     }
 
-    rifeOutputBuffers.clear();
-    rifeDisplayBufferSize = 0;
-    resetRifeDisplayState(rifePresentationState);
+    ncnnOutputBuffers.clear();
+    ncnnDisplayBufferSize = 0;
+    resetNcnnDisplayState(ncnnPresentationState);
 #if HAS_NCNN
-    resetRifeAdaptiveInferenceState(rifePresentationState);
+    resetNcnnAdaptiveInferenceState(ncnnPresentationState);
 #endif
 
     for (auto& frame : offscreenFrames) {
@@ -384,9 +384,9 @@ void VulkanRifeRendererApp::cleanupFrameProcessingResources() {
             frame.imageView = VK_NULL_HANDLE;
         }
 
-        if (frame.rifeInputImageView) {
-            vkDestroyImageView(device, frame.rifeInputImageView, nullptr);
-            frame.rifeInputImageView = VK_NULL_HANDLE;
+        if (frame.ncnnInputImageView) {
+            vkDestroyImageView(device, frame.ncnnInputImageView, nullptr);
+            frame.ncnnInputImageView = VK_NULL_HANDLE;
         }
 
         if (frame.image) {
@@ -404,31 +404,31 @@ void VulkanRifeRendererApp::cleanupFrameProcessingResources() {
 
     offscreenFrames.clear();
     pendingCaptureSlotByFrame.fill(UINT32_MAX);
-    resetRifeFramePairState(rifePresentationState);
+    resetNcnnFramePairState(ncnnPresentationState);
     capturedFrameCount = 0;
     previousFrameCaptureProcessMs = 0.0;
     lastFrameCaptureProcessMs = 0.0;
     lastFramePairCaptureProcessMs = 0.0;
 }
 
-uint32_t VulkanRifeRendererApp::findAvailableOffscreenFrameSlot() const {
+uint32_t VulkanNcnnRenderer::findAvailableOffscreenFrameSlot() const {
     for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
 #if HAS_NCNN
-        if (rifePresentationState.rifeInferenceInFlight &&
-            (slot == rifePresentationState.asyncRifePrevFrameIndex || slot == rifePresentationState.asyncRifeCurrFrameIndex)) {
+        if (ncnnPresentationState.ncnnInferenceInFlight &&
+            (slot == ncnnPresentationState.asyncNcnnPrevFrameIndex || slot == ncnnPresentationState.asyncNcnnCurrFrameIndex)) {
             continue;
         }
 #endif
-        if (slot == rifePresentationState.currentRifeGpuFrameIndex) {
+        if (slot == ncnnPresentationState.currentNcnnGpuFrameIndex) {
             continue;
         }
-        if (slot == rifePresentationState.rifePendingSourceDisplayIndex) {
+        if (slot == ncnnPresentationState.ncnnPendingSourceDisplayIndex) {
             continue;
         }
-        if (slot == rifePresentationState.rifeHeldSourceDisplayIndex) {
+        if (slot == ncnnPresentationState.ncnnHeldSourceDisplayIndex) {
             continue;
         }
-        if (slot == rifePresentationState.rifeLastPresentedSourceIndex) {
+        if (slot == ncnnPresentationState.ncnnLastPresentedSourceIndex) {
             continue;
         }
 
@@ -448,7 +448,7 @@ uint32_t VulkanRifeRendererApp::findAvailableOffscreenFrameSlot() const {
     return UINT32_MAX;
 }
 
-void VulkanRifeRendererApp::copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
+void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer,
                                                        uint32_t imageIndex,
                                                        VkBuffer sourceBuffer,
                                                        VkAccessFlags sourceAccessMask,
@@ -484,15 +484,15 @@ void VulkanRifeRendererApp::copyRifeBufferToSwapchain(VkCommandBuffer commandBuf
         &toTransferDstBarrier
     );
 
-    VkBufferMemoryBarrier rifeOutputBarrier{};
-    rifeOutputBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    rifeOutputBarrier.srcAccessMask = sourceAccessMask;
-    rifeOutputBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    rifeOutputBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    rifeOutputBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    rifeOutputBarrier.buffer = sourceBuffer;
-    rifeOutputBarrier.offset = 0;
-    rifeOutputBarrier.size = VK_WHOLE_SIZE;
+    VkBufferMemoryBarrier ncnnOutputBarrier{};
+    ncnnOutputBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    ncnnOutputBarrier.srcAccessMask = sourceAccessMask;
+    ncnnOutputBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    ncnnOutputBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    ncnnOutputBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    ncnnOutputBarrier.buffer = sourceBuffer;
+    ncnnOutputBarrier.offset = 0;
+    ncnnOutputBarrier.size = VK_WHOLE_SIZE;
 
     vkCmdPipelineBarrier(
         commandBuffer,
@@ -502,7 +502,7 @@ void VulkanRifeRendererApp::copyRifeBufferToSwapchain(VkCommandBuffer commandBuf
         0,
         nullptr,
         1,
-        &rifeOutputBarrier,
+        &ncnnOutputBarrier,
         0,
         nullptr
     );
@@ -556,24 +556,24 @@ void VulkanRifeRendererApp::copyRifeBufferToSwapchain(VkCommandBuffer commandBuf
     );
 }
 
-void VulkanRifeRendererApp::displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    if (!rifePresentationState.hasRifeDisplayFrame ||
-        rifePresentationState.rifePendingInterpolatedOutputIndex >= rifeOutputBuffers.size() ||
-        rifeOutputBuffers.empty()) {
+void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    if (!ncnnPresentationState.hasNcnnDisplayFrame ||
+        ncnnPresentationState.ncnnPendingInterpolatedOutputIndex >= ncnnOutputBuffers.size() ||
+        ncnnOutputBuffers.empty()) {
         return;
     }
 
-    auto& selectedOutput = rifeOutputBuffers[rifePresentationState.rifePendingInterpolatedOutputIndex];
+    auto& selectedOutput = ncnnOutputBuffers[ncnnPresentationState.ncnnPendingInterpolatedOutputIndex];
     if (!selectedOutput.ready ||
         selectedOutput.inUseByGraphics ||
         selectedOutput.gpuBuffer == VK_NULL_HANDLE ||
         selectedOutput.size == 0) {
-        rifePresentationState.hasRifeDisplayFrame = false;
-        rifePresentationState.rifePendingInterpolatedOutputIndex = UINT32_MAX;
+        ncnnPresentationState.hasNcnnDisplayFrame = false;
+        ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
         return;
     }
 
-    copyRifeBufferToSwapchain(
+    copyNcnnBufferToSwapchain(
         commandBuffer,
         imageIndex,
         selectedOutput.gpuBuffer,
@@ -585,12 +585,12 @@ void VulkanRifeRendererApp::displayRifeFrameOnSwapchain(VkCommandBuffer commandB
     selectedOutput.inUseByGraphics = true;
     selectedOutput.graphicsFrameSlot = currentFrame;
 
-    rifePresentationState.hasRifeDisplayFrame = false;
-    rifePresentationState.rifePendingInterpolatedOutputIndex = UINT32_MAX;
-    rifePresentationState.rifeHeldSourceDisplayIndex = UINT32_MAX;
+    ncnnPresentationState.hasNcnnDisplayFrame = false;
+    ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
+    ncnnPresentationState.ncnnHeldSourceDisplayIndex = UINT32_MAX;
 }
 
-void VulkanRifeRendererApp::displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex) {
+void VulkanNcnnRenderer::displayNcnnSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex) {
     if (sourceIndex >= offscreenFrames.size()) {
         return;
     }
@@ -603,106 +603,106 @@ void VulkanRifeRendererApp::displayRifeSourceBufferOnSwapchain(VkCommandBuffer c
     copyOffscreenImageToSwapchain(commandBuffer, imageIndex, sourceIndex);
 }
 
-void VulkanRifeRendererApp::displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    if (rifePresentationState.rifePendingSourceDisplayIndex >= offscreenFrames.size()) {
-        rifePresentationState.rifePendingSourceDisplayIndex = UINT32_MAX;
+void VulkanNcnnRenderer::displayCapturedNcnnSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    if (ncnnPresentationState.ncnnPendingSourceDisplayIndex >= offscreenFrames.size()) {
+        ncnnPresentationState.ncnnPendingSourceDisplayIndex = UINT32_MAX;
         return;
     }
 
-    displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, rifePresentationState.rifePendingSourceDisplayIndex);
-    rifePresentationState.rifeLastPresentedSourceIndex = rifePresentationState.rifePendingSourceDisplayIndex;
-    rifePresentationState.rifePendingSourceDisplayIndex = UINT32_MAX;
-    rifePresentationState.rifeHeldSourceDisplayIndex = UINT32_MAX;
-    rifePresentationState.rifeRenderAheadPending = false;
+    displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnPendingSourceDisplayIndex);
+    ncnnPresentationState.ncnnLastPresentedSourceIndex = ncnnPresentationState.ncnnPendingSourceDisplayIndex;
+    ncnnPresentationState.ncnnPendingSourceDisplayIndex = UINT32_MAX;
+    ncnnPresentationState.ncnnHeldSourceDisplayIndex = UINT32_MAX;
+    ncnnPresentationState.ncnnRenderAheadPending = false;
 }
 
 #if HAS_NCNN
-void VulkanRifeRendererApp::waitForAsyncRifeInference() {
-    if (asyncRifeInference.valid()) {
-        asyncRifeInference.wait();
-        AsyncRifeResult result = asyncRifeInference.get();
-        if (result.outputIndex < rifeOutputBuffers.size()) {
-            rifeOutputBuffers[result.outputIndex].inUseByInference = false;
-            rifeOutputBuffers[result.outputIndex].ready = false;
+void VulkanNcnnRenderer::waitForAsyncNcnnInference() {
+    if (asyncNcnnInference.valid()) {
+        asyncNcnnInference.wait();
+        AsyncNcnnResult result = asyncNcnnInference.get();
+        if (result.outputIndex < ncnnOutputBuffers.size()) {
+            ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
+            ncnnOutputBuffers[result.outputIndex].ready = false;
         }
     }
 
-    resetRifeAsyncState(rifePresentationState);
-    resetRifePendingPresentationState(rifePresentationState);
+    resetNcnnAsyncState(ncnnPresentationState);
+    resetNcnnPendingPresentationState(ncnnPresentationState);
 }
 
-void VulkanRifeRendererApp::pollAsyncRifeInference() {
-    if (!asyncRifeInference.valid()) {
-        rifePresentationState.rifeInferenceInFlight = false;
+void VulkanNcnnRenderer::pollAsyncNcnnInference() {
+    if (!asyncNcnnInference.valid()) {
+        ncnnPresentationState.ncnnInferenceInFlight = false;
         return;
     }
 
-    if (asyncRifeInference.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+    if (asyncNcnnInference.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
         return;
     }
 
-    const AsyncRifeResult result = asyncRifeInference.get();
-    if (result.outputIndex < rifeOutputBuffers.size()) {
-        rifeOutputBuffers[result.outputIndex].inUseByInference = false;
+    const AsyncNcnnResult result = asyncNcnnInference.get();
+    if (result.outputIndex < ncnnOutputBuffers.size()) {
+        ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
     }
-    resetRifeAsyncState(rifePresentationState);
+    resetNcnnAsyncState(ncnnPresentationState);
 
     if (result.processRet == 0) {
-        if (result.outputIndex >= rifeOutputBuffers.size()) {
-            std::cerr << "[RIFE] async GPU interpolation finished with invalid output slot" << std::endl;
+        if (result.outputIndex >= ncnnOutputBuffers.size()) {
+            std::cerr << "[NCNN] async GPU interpolation finished with invalid output slot" << std::endl;
             return;
         }
 
-        ++rifePresentationState.rifeCompletedInferenceCount;
-        const int previousDivisor = rifePresentationState.rifeInferenceScaleDivisor;
-        if (result.inferenceMs > RIFE_TARGET_INFERENCE_MS && rifePresentationState.rifeInferenceScaleDivisor < RIFE_MAX_INFERENCE_SCALE_DIVISOR) {
-            ++rifePresentationState.rifeInferenceScaleDivisor;
+        ++ncnnPresentationState.ncnnCompletedInferenceCount;
+        const int previousDivisor = ncnnPresentationState.ncnnInferenceScaleDivisor;
+        if (result.inferenceMs > NCNN_TARGET_INFERENCE_MS && ncnnPresentationState.ncnnInferenceScaleDivisor < NCNN_MAX_INFERENCE_SCALE_DIVISOR) {
+            ++ncnnPresentationState.ncnnInferenceScaleDivisor;
         }
-        else if (result.inferenceMs < RIFE_FAST_INFERENCE_MS && rifePresentationState.rifeInferenceScaleDivisor > RIFE_MIN_INFERENCE_SCALE_DIVISOR) {
-            --rifePresentationState.rifeInferenceScaleDivisor;
+        else if (result.inferenceMs < NCNN_FAST_INFERENCE_MS && ncnnPresentationState.ncnnInferenceScaleDivisor > NCNN_MIN_INFERENCE_SCALE_DIVISOR) {
+            --ncnnPresentationState.ncnnInferenceScaleDivisor;
         }
 
-        rifeOutputBuffers[result.outputIndex].ready = true;
-        rifeOutputBuffers[result.outputIndex].sequence = rifePresentationState.nextRifeOutputSequence++;
-        rifePresentationState.rifePendingInterpolatedOutputIndex = result.outputIndex;
-        rifePresentationState.rifePendingSourceDisplayIndex = result.currentSourceIndex;
-        rifePresentationState.hasRifeDisplayFrame = true;
-        if (previousDivisor != rifePresentationState.rifeInferenceScaleDivisor || (rifePresentationState.rifeCompletedInferenceCount % 120) == 1) {
-            std::cout << "[RIFE] async inference"
+        ncnnOutputBuffers[result.outputIndex].ready = true;
+        ncnnOutputBuffers[result.outputIndex].sequence = ncnnPresentationState.nextNcnnOutputSequence++;
+        ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = result.outputIndex;
+        ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
+        ncnnPresentationState.hasNcnnDisplayFrame = true;
+        if (previousDivisor != ncnnPresentationState.ncnnInferenceScaleDivisor || (ncnnPresentationState.ncnnCompletedInferenceCount % 120) == 1) {
+            std::cout << "[NCNN] async inference"
                       << " display=" << result.inputW << "x" << result.inputH
                       << ", inference=" << result.inferenceW << "x" << result.inferenceH
-                      << ", scale_divisor=" << rifePresentationState.rifeInferenceScaleDivisor
+                      << ", scale_divisor=" << ncnnPresentationState.ncnnInferenceScaleDivisor
                       << ", inference_ms=" << result.inferenceMs << std::endl;
         }
         return;
     }
 
-    std::cerr << "[RIFE] async GPU interpolation failed"
+    std::cerr << "[NCNN] async GPU interpolation failed"
               << " (code=" << result.processRet
               << ", inference_ms=" << result.inferenceMs << ")" << std::endl;
     // Do not leave the scheduler holding N forever if interpolation fails.
     // Advance to N+1 on the next presentation tick and resume render-ahead.
-    rifePresentationState.rifePendingSourceDisplayIndex = result.currentSourceIndex;
+    ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
 }
 
-bool VulkanRifeRendererApp::submitAsyncRifeInferenceIfReady() {
-    if (!rifePresentationState.rifeRealtimeInterpolationEnabled ||
-        !rifeModelAttachedToRenderer ||
-        rifePresentationState.rifeInferenceInFlight ||
-        !rifePresentationState.hasRifeGpuFramePair ||
+bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
+    if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled ||
+        !ncnnModelAttachedToRenderer ||
+        ncnnPresentationState.ncnnInferenceInFlight ||
+        !ncnnPresentationState.hasNcnnGpuFramePair ||
         capturedFrameCount < 2 ||
-        rifePresentationState.previousRifeGpuFrameIndex >= offscreenFrames.size() ||
-        rifePresentationState.currentRifeGpuFrameIndex >= offscreenFrames.size() ||
-        rifeOutputBuffers.empty() ||
-        rifeDisplayBufferSize == 0) {
+        ncnnPresentationState.previousNcnnGpuFrameIndex >= offscreenFrames.size() ||
+        ncnnPresentationState.currentNcnnGpuFrameIndex >= offscreenFrames.size() ||
+        ncnnOutputBuffers.empty() ||
+        ncnnDisplayBufferSize == 0) {
         return false;
     }
 
     uint32_t outputIndex = UINT32_MAX;
-    for (uint32_t i = 0; i < rifeOutputBuffers.size(); ++i) {
-        const auto& output = rifeOutputBuffers[i];
+    for (uint32_t i = 0; i < ncnnOutputBuffers.size(); ++i) {
+        const auto& output = ncnnOutputBuffers[i];
         if (output.gpuBuffer != VK_NULL_HANDLE &&
-            output.size >= rifeDisplayBufferSize &&
+            output.size >= ncnnDisplayBufferSize &&
             !output.ready &&
             !output.inUseByInference &&
             !output.inUseByGraphics) {
@@ -715,43 +715,43 @@ bool VulkanRifeRendererApp::submitAsyncRifeInferenceIfReady() {
         return false;
     }
 
-    const uint32_t prevIndex = rifePresentationState.previousRifeGpuFrameIndex;
-    const uint32_t currIndex = rifePresentationState.currentRifeGpuFrameIndex;
+    const uint32_t prevIndex = ncnnPresentationState.previousNcnnGpuFrameIndex;
+    const uint32_t currIndex = ncnnPresentationState.currentNcnnGpuFrameIndex;
     const VkImage prevImage = offscreenFrames[prevIndex].image;
-    const VkImageView prevImageView = offscreenFrames[prevIndex].rifeInputImageView;
+    const VkImageView prevImageView = offscreenFrames[prevIndex].ncnnInputImageView;
     const VkDeviceMemory prevMemory = offscreenFrames[prevIndex].imageMemory;
     const VkImage currImage = offscreenFrames[currIndex].image;
-    const VkImageView currImageView = offscreenFrames[currIndex].rifeInputImageView;
+    const VkImageView currImageView = offscreenFrames[currIndex].ncnnInputImageView;
     const VkDeviceMemory currMemory = offscreenFrames[currIndex].imageMemory;
     const VkFormat inputFormat =
         swapChainImageFormat == VK_FORMAT_B8G8R8A8_SRGB ? VK_FORMAT_B8G8R8A8_UNORM :
         swapChainImageFormat == VK_FORMAT_R8G8B8A8_SRGB ? VK_FORMAT_R8G8B8A8_UNORM :
         swapChainImageFormat;
-    const VkBuffer outBuffer = rifeOutputBuffers[outputIndex].gpuBuffer;
-    const VkDeviceMemory outMemory = rifeOutputBuffers[outputIndex].gpuMemory;
-    const VkDeviceSize outSize = rifeOutputBuffers[outputIndex].size;
+    const VkBuffer outBuffer = ncnnOutputBuffers[outputIndex].gpuBuffer;
+    const VkDeviceMemory outMemory = ncnnOutputBuffers[outputIndex].gpuMemory;
+    const VkDeviceSize outSize = ncnnOutputBuffers[outputIndex].size;
     const int inputW = static_cast<int>(swapChainExtent.width);
     const int inputH = static_cast<int>(swapChainExtent.height);
     const int divisor = std::clamp(
-        rifePresentationState.rifeInferenceScaleDivisor,
-        RIFE_MIN_INFERENCE_SCALE_DIVISOR,
-        RIFE_MAX_INFERENCE_SCALE_DIVISOR
+        ncnnPresentationState.ncnnInferenceScaleDivisor,
+        NCNN_MIN_INFERENCE_SCALE_DIVISOR,
+        NCNN_MAX_INFERENCE_SCALE_DIVISOR
     );
     const int inferenceW = std::min(inputW, std::max(32, inputW / divisor));
     const int inferenceH = std::min(inputH, std::max(32, inputH / divisor));
 
-    rifePresentationState.rifeInferenceInFlight = true;
-    rifePresentationState.asyncRifePrevFrameIndex = prevIndex;
-    rifePresentationState.asyncRifeCurrFrameIndex = currIndex;
-    rifePresentationState.asyncRifeOutputIndex = outputIndex;
-    rifeOutputBuffers[outputIndex].inUseByInference = true;
-    rifeOutputBuffers[outputIndex].ready = false;
-    rifeOutputBuffers[outputIndex].sequence = 0;
-    rifePresentationState.hasRifeGpuFramePair = false;
-    rifePresentationState.rifeHeldSourceDisplayIndex = prevIndex;
-    rifePresentationState.rifeInferenceRequestWaitingForFramePair = false;
+    ncnnPresentationState.ncnnInferenceInFlight = true;
+    ncnnPresentationState.asyncNcnnPrevFrameIndex = prevIndex;
+    ncnnPresentationState.asyncNcnnCurrFrameIndex = currIndex;
+    ncnnPresentationState.asyncNcnnOutputIndex = outputIndex;
+    ncnnOutputBuffers[outputIndex].inUseByInference = true;
+    ncnnOutputBuffers[outputIndex].ready = false;
+    ncnnOutputBuffers[outputIndex].sequence = 0;
+    ncnnPresentationState.hasNcnnGpuFramePair = false;
+    ncnnPresentationState.ncnnHeldSourceDisplayIndex = prevIndex;
+    ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
 
-    asyncRifeInference = std::async(std::launch::async, [this,
+    asyncNcnnInference = std::async(std::launch::async, [this,
                                                          prevImage,
                                                          prevImageView,
                                                          prevMemory,
@@ -768,7 +768,7 @@ bool VulkanRifeRendererApp::submitAsyncRifeInferenceIfReady() {
                                                          inferenceH,
                                                          currIndex,
                                                          outputIndex]() {
-        AsyncRifeResult result{};
+        AsyncNcnnResult result{};
         result.inputW = inputW;
         result.inputH = inputH;
         result.inferenceW = inferenceW;
@@ -778,7 +778,7 @@ bool VulkanRifeRendererApp::submitAsyncRifeInferenceIfReady() {
 
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         const auto start = std::chrono::high_resolution_clock::now();
-        result.processRet = rifeRunner.processGpuRgbaFrames(
+        result.processRet = ncnnFrameInterpolator.processGpuRgbaFrames(
             prevImage,
             prevImageView,
             prevMemory,

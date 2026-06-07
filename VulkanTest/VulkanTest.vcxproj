@@ -148,18 +148,18 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\rife\RifeRunner.cpp" />
+    <ClCompile Include="src\ncnn\NcnnFrameInterpolator.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\app\DescriptorResources.cpp" />
     <ClCompile Include="src\app\ModelLoader.cpp" />
     <ClCompile Include="src\app\RenderResources.cpp" />
-    <ClCompile Include="src\app\RifeIntegration.cpp" />
+    <ClCompile Include="src\app\NcnnIntegration.cpp" />
     <ClCompile Include="src\app\Swapchain.cpp" />
     <ClCompile Include="src\app\TextureLoader.cpp" />
     <ClCompile Include="src\app\VulkanBuffers.cpp" />
     <ClCompile Include="src\app\VulkanDevice.cpp" />
     <ClCompile Include="src\app\VulkanHelpers.cpp" />
-    <ClCompile Include="src\app\VulkanRifeRendererApp.cpp" />
+    <ClCompile Include="src\app\VulkanNcnnRenderer.cpp" />
     <ClCompile Include="src\platform\WindowInput.cpp" />
     <ClCompile Include="src\platform\validation_layers.cpp" />
     <ClCompile Include="third_party\rife\rife.cpp">
@@ -186,12 +186,12 @@
     <ClInclude Include="include\app\DescriptorResources.h" />
     <ClInclude Include="include\app\ModelLoader.h" />
     <ClInclude Include="include\app\RenderResources.h" />
-    <ClInclude Include="include\app\RifeIntegration.h" />
+    <ClInclude Include="include\app\NcnnIntegration.h" />
     <ClInclude Include="include\app\Swapchain.h" />
     <ClInclude Include="include\app\TextureLoader.h" />
     <ClInclude Include="include\app\VulkanHelpers.h" />
-    <ClInclude Include="include\app\VulkanRifeRendererApp.h" />
-    <ClInclude Include="include\app\RifeRunner.h" />
+    <ClInclude Include="include\app\VulkanNcnnRenderer.h" />
+    <ClInclude Include="include\app\NcnnFrameInterpolator.h" />
     <ClInclude Include="include\platform\WindowInput.h" />
     <ClInclude Include="include\platform\validation_layers.h" />
     <ClInclude Include="third_party\json.hpp" />

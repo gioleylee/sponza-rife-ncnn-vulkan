@@ -19,13 +19,13 @@ inline constexpr uint32_t WIDTH = 1280;
 inline constexpr uint32_t HEIGHT = 720;
 
 inline constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-inline constexpr int RIFE_INITIAL_INFERENCE_SCALE_DIVISOR = 1;
-inline constexpr int RIFE_MIN_INFERENCE_SCALE_DIVISOR = 1;
-inline constexpr int RIFE_MAX_INFERENCE_SCALE_DIVISOR = 1;
-inline constexpr double RIFE_TARGET_INFERENCE_MS = 10.0;
-inline constexpr double RIFE_FAST_INFERENCE_MS = 6.0;
+inline constexpr int NCNN_INITIAL_INFERENCE_SCALE_DIVISOR = 1;
+inline constexpr int NCNN_MIN_INFERENCE_SCALE_DIVISOR = 1;
+inline constexpr int NCNN_MAX_INFERENCE_SCALE_DIVISOR = 1;
+inline constexpr double NCNN_TARGET_INFERENCE_MS = 10.0;
+inline constexpr double NCNN_FAST_INFERENCE_MS = 6.0;
 inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 4;
-inline constexpr uint32_t RIFE_OUTPUT_BUFFER_COUNT = 3;
+inline constexpr uint32_t NCNN_OUTPUT_BUFFER_COUNT = 3;
 
 inline const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -158,20 +158,20 @@ struct LightingPushConstants {
 };
 
 // A real rendered frame lives entirely on the GPU. imageView preserves SRGB
-// rendering and presentation behavior; rifeInputImageView reads the same image
+// rendering and presentation behavior; ncnnInputImageView reads the same image
 // through a compatible UNORM view so NCNN sees the stored normalized color
 // values without an image-to-buffer copy or implicit SRGB decoding.
 struct OffscreenFrame {
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory imageMemory = VK_NULL_HANDLE;
     VkImageView imageView = VK_NULL_HANDLE;
-    VkImageView rifeInputImageView = VK_NULL_HANDLE;
+    VkImageView ncnnInputImageView = VK_NULL_HANDLE;
     VkBuffer gpuBuffer = VK_NULL_HANDLE;
     VkDeviceMemory gpuMemory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
 };
 
-struct RifeOutputBuffer {
+struct NcnnOutputBuffer {
     VkBuffer gpuBuffer = VK_NULL_HANDLE;
     VkDeviceMemory gpuMemory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
@@ -182,7 +182,7 @@ struct RifeOutputBuffer {
     uint64_t sequence = 0;
 };
 
-struct AsyncRifeResult {
+struct AsyncNcnnResult {
     int processRet = -1;
     double inferenceMs = 0.0;
     int inputW = 0;
@@ -193,25 +193,25 @@ struct AsyncRifeResult {
     uint32_t currentSourceIndex = UINT32_MAX;
 };
 
-struct RifePresentationState {
-    bool hasRifeGpuFramePair = false;
-    uint32_t currentRifeGpuFrameIndex = UINT32_MAX;
-    uint32_t previousRifeGpuFrameIndex = UINT32_MAX;
-    bool hasRifeDisplayFrame = false;
-    uint64_t nextRifeOutputSequence = 1;
-    uint32_t rifePendingInterpolatedOutputIndex = UINT32_MAX;
-    uint32_t rifePendingSourceDisplayIndex = UINT32_MAX;
-    uint32_t rifeHeldSourceDisplayIndex = UINT32_MAX;
-    uint32_t rifeLastPresentedSourceIndex = UINT32_MAX;
-    bool rifeRenderAheadPending = false;
-    bool rifeInferenceInFlight = false;
-    uint32_t asyncRifePrevFrameIndex = UINT32_MAX;
-    uint32_t asyncRifeCurrFrameIndex = UINT32_MAX;
-    uint32_t asyncRifeOutputIndex = UINT32_MAX;
-    int rifeInferenceScaleDivisor = RIFE_INITIAL_INFERENCE_SCALE_DIVISOR;
-    uint64_t rifeCompletedInferenceCount = 0;
-    bool rifeRealtimeInterpolationEnabled = false;
-    bool rifeInferenceRequestWaitingForFramePair = false;
+struct NcnnPresentationState {
+    bool hasNcnnGpuFramePair = false;
+    uint32_t currentNcnnGpuFrameIndex = UINT32_MAX;
+    uint32_t previousNcnnGpuFrameIndex = UINT32_MAX;
+    bool hasNcnnDisplayFrame = false;
+    uint64_t nextNcnnOutputSequence = 1;
+    uint32_t ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
+    uint32_t ncnnPendingSourceDisplayIndex = UINT32_MAX;
+    uint32_t ncnnHeldSourceDisplayIndex = UINT32_MAX;
+    uint32_t ncnnLastPresentedSourceIndex = UINT32_MAX;
+    bool ncnnRenderAheadPending = false;
+    bool ncnnInferenceInFlight = false;
+    uint32_t asyncNcnnPrevFrameIndex = UINT32_MAX;
+    uint32_t asyncNcnnCurrFrameIndex = UINT32_MAX;
+    uint32_t asyncNcnnOutputIndex = UINT32_MAX;
+    int ncnnInferenceScaleDivisor = NCNN_INITIAL_INFERENCE_SCALE_DIVISOR;
+    uint64_t ncnnCompletedInferenceCount = 0;
+    bool ncnnRealtimeInterpolationEnabled = false;
+    bool ncnnInferenceRequestWaitingForFramePair = false;
 };
 
 enum class PresentationCommandMode {

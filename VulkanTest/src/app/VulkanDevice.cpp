@@ -1,5 +1,5 @@
 // Owns Vulkan instance/device setup and queue-family selection.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -11,14 +11,14 @@
 #include <stdexcept>
 #include <vector>
 
-void VulkanRifeRendererApp::createInstance() {
+void VulkanNcnnRenderer::createInstance() {
     if (validation::Enabled && !validation::checkLayerSupport()) {
         throw std::runtime_error("validation layers requested, but not available!");
     }
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "VulkanTestSponza";
+    appInfo.pApplicationName = "VulkanNcnnRenderer";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "No Engine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -51,7 +51,7 @@ void VulkanRifeRendererApp::createInstance() {
     }
 }
 
-void VulkanRifeRendererApp::setupDebugMessenger() {
+void VulkanNcnnRenderer::setupDebugMessenger() {
     if (!validation::Enabled) return;
 
     VkDebugUtilsMessengerCreateInfoEXT createInfo;
@@ -62,13 +62,13 @@ void VulkanRifeRendererApp::setupDebugMessenger() {
     }
 }
 
-void VulkanRifeRendererApp::createSurface() {
+void VulkanNcnnRenderer::createSurface() {
     if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
         throw std::runtime_error("failed to create window surface!");
     }
 }
 
-void VulkanRifeRendererApp::pickPhysicalDevice() {
+void VulkanNcnnRenderer::pickPhysicalDevice() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
@@ -116,7 +116,7 @@ void VulkanRifeRendererApp::pickPhysicalDevice() {
               << std::endl;
 }
 
-void VulkanRifeRendererApp::createLogicalDevice() {
+void VulkanNcnnRenderer::createLogicalDevice() {
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
     uint32_t queueFamilyCount = 0;
@@ -307,7 +307,7 @@ void VulkanRifeRendererApp::createLogicalDevice() {
 #endif
 }
 
-bool VulkanRifeRendererApp::isDeviceSuitable(VkPhysicalDevice device) {
+bool VulkanNcnnRenderer::isDeviceSuitable(VkPhysicalDevice device) {
     QueueFamilyIndices indices = findQueueFamilies(device);
 
     bool extensionsSupported = checkDeviceExtensionSupport(device);
@@ -321,7 +321,7 @@ bool VulkanRifeRendererApp::isDeviceSuitable(VkPhysicalDevice device) {
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
-bool VulkanRifeRendererApp::checkDeviceExtensionSupport(VkPhysicalDevice device) {
+bool VulkanNcnnRenderer::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     uint32_t extensionCount;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
 
@@ -337,7 +337,7 @@ bool VulkanRifeRendererApp::checkDeviceExtensionSupport(VkPhysicalDevice device)
     return requiredExtensions.empty();
 }
 
-QueueFamilyIndices VulkanRifeRendererApp::findQueueFamilies(VkPhysicalDevice device) {
+QueueFamilyIndices VulkanNcnnRenderer::findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
 
     uint32_t queueFamilyCount = 0;
@@ -386,6 +386,6 @@ QueueFamilyIndices VulkanRifeRendererApp::findQueueFamilies(VkPhysicalDevice dev
     return indices;
 }
 
-VkFormat VulkanRifeRendererApp::findDepthFormat() {
+VkFormat VulkanNcnnRenderer::findDepthFormat() {
     return VK_FORMAT_D32_SFLOAT;
 }

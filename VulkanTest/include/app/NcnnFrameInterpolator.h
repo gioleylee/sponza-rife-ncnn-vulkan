@@ -24,7 +24,7 @@
 #if HAS_NCNN
 #include "rife.h"
 
-class RifeRunner {
+class NcnnFrameInterpolator {
 public:
     bool initialize(ncnn::Net& targetNet,
                     const std::string& paramPath,
@@ -54,7 +54,7 @@ public:
     void reset();
 
 private:
-    std::unique_ptr<RIFE> rifeEngine;
+    std::unique_ptr<RIFE> ncnnEngine;
     std::unique_ptr<ncnn::VulkanDevice> rendererVkdev;
     std::string loadedParamPath;
     std::string loadedBinPath;

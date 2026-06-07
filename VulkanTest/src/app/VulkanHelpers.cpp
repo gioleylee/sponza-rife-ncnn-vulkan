@@ -1,12 +1,12 @@
 // Owns generic Vulkan buffer, image, memory, and one-shot command helpers.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <vulkan/vulkan.h>
 
 #include <mutex>
 #include <stdexcept>
 
-void VulkanRifeRendererApp::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+void VulkanNcnnRenderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                    VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -33,7 +33,7 @@ void VulkanRifeRendererApp::createBuffer(VkDeviceSize size, VkBufferUsageFlags u
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
 }
 
-void VulkanRifeRendererApp::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+void VulkanNcnnRenderer::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -69,7 +69,7 @@ void VulkanRifeRendererApp::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, V
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-uint32_t VulkanRifeRendererApp::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+uint32_t VulkanNcnnRenderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     uint32_t memoryTypeIndex = 0;
     if (tryFindMemoryType(typeFilter, properties, memoryTypeIndex)) {
         return memoryTypeIndex;
@@ -78,7 +78,7 @@ uint32_t VulkanRifeRendererApp::findMemoryType(uint32_t typeFilter, VkMemoryProp
     throw std::runtime_error("failed to find suitable memory type!");
 }
 
-bool VulkanRifeRendererApp::tryFindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t& memoryTypeIndex) {
+bool VulkanNcnnRenderer::tryFindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t& memoryTypeIndex) {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
@@ -92,7 +92,7 @@ bool VulkanRifeRendererApp::tryFindMemoryType(uint32_t typeFilter, VkMemoryPrope
     return false;
 }
 
-void VulkanRifeRendererApp::createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
+void VulkanNcnnRenderer::createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
     VkImageTiling tiling, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties,
     VkImage& image, VkDeviceMemory& imageMemory,
@@ -133,7 +133,7 @@ void VulkanRifeRendererApp::createImage(uint32_t width, uint32_t height, uint32_
     vkBindImageMemory(device, image, imageMemory, 0);
 }
 
-VkCommandBuffer VulkanRifeRendererApp::beginSingleTimeCommands() {
+VkCommandBuffer VulkanNcnnRenderer::beginSingleTimeCommands() {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -151,7 +151,7 @@ VkCommandBuffer VulkanRifeRendererApp::beginSingleTimeCommands() {
     return commandBuffer;
 }
 
-void VulkanRifeRendererApp::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+void VulkanNcnnRenderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
     vkEndCommandBuffer(commandBuffer);
 
     VkSubmitInfo submitInfo{};
@@ -168,7 +168,7 @@ void VulkanRifeRendererApp::endSingleTimeCommands(VkCommandBuffer commandBuffer)
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void VulkanRifeRendererApp::transitionImageLayout(VkImage image, VkFormat format,
+void VulkanNcnnRenderer::transitionImageLayout(VkImage image, VkFormat format,
     VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels) {
     VkCommandBuffer cmd = beginSingleTimeCommands();
 
@@ -236,7 +236,7 @@ void VulkanRifeRendererApp::transitionImageLayout(VkImage image, VkFormat format
     endSingleTimeCommands(cmd);
 }
 
-void VulkanRifeRendererApp::copyBufferToImage(VkBuffer buffer, VkImage image,
+void VulkanNcnnRenderer::copyBufferToImage(VkBuffer buffer, VkImage image,
     uint32_t width, uint32_t height) {
     VkCommandBuffer cmd = beginSingleTimeCommands();
 

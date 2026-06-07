@@ -22,34 +22,34 @@
 #include <mutex>
 #include <stdexcept>
 
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 namespace {
 
-PresentationCommandMode choosePresentationCommandMode(const RifePresentationState& rifeState,
+PresentationCommandMode choosePresentationCommandMode(const NcnnPresentationState& ncnnState,
                                                       size_t offscreenFrameCount) {
     // RenderFrame: render a new scene frame into the offscreen history, then present that source frame.
     PresentationCommandMode mode = PresentationCommandMode::RenderFrame;
 
-    // DisplayInterpolatedFrame: present the completed RIFE N+0.5 output before advancing source frames.
-    if (rifeState.rifeRealtimeInterpolationEnabled && rifeState.hasRifeDisplayFrame) {
+    // DisplayInterpolatedFrame: present the completed NCNN N+0.5 output before advancing source frames.
+    if (ncnnState.ncnnRealtimeInterpolationEnabled && ncnnState.hasNcnnDisplayFrame) {
         mode = PresentationCommandMode::DisplayInterpolatedFrame;
     }
-    // DisplayCapturedSourceFrame: present a captured source frame that must be shown after RIFE completion or failure.
-    else if (rifeState.rifeRealtimeInterpolationEnabled &&
-             rifeState.rifePendingSourceDisplayIndex < offscreenFrameCount) {
+    // DisplayCapturedSourceFrame: present a captured source frame after interpolation completion or failure.
+    else if (ncnnState.ncnnRealtimeInterpolationEnabled &&
+             ncnnState.ncnnPendingSourceDisplayIndex < offscreenFrameCount) {
         mode = PresentationCommandMode::DisplayCapturedSourceFrame;
     }
-    // DisplayHeldSourceFrame: keep the last source frame visible while async RIFE inference is still running.
-    else if (rifeState.rifeRealtimeInterpolationEnabled &&
-             rifeState.rifeInferenceInFlight &&
-             rifeState.rifeHeldSourceDisplayIndex < offscreenFrameCount) {
+    // DisplayHeldSourceFrame: keep the last source frame visible while async NCNN inference is still running.
+    else if (ncnnState.ncnnRealtimeInterpolationEnabled &&
+             ncnnState.ncnnInferenceInFlight &&
+             ncnnState.ncnnHeldSourceDisplayIndex < offscreenFrameCount) {
         mode = PresentationCommandMode::DisplayHeldSourceFrame;
     }
     // DisplayHeldSourceFrame: keep the held source visible during render-ahead before the interpolated frame is ready.
-    else if (rifeState.rifeRealtimeInterpolationEnabled &&
-             rifeState.rifeRenderAheadPending &&
-             rifeState.rifeHeldSourceDisplayIndex < offscreenFrameCount) {
+    else if (ncnnState.ncnnRealtimeInterpolationEnabled &&
+             ncnnState.ncnnRenderAheadPending &&
+             ncnnState.ncnnHeldSourceDisplayIndex < offscreenFrameCount) {
         mode = PresentationCommandMode::DisplayHeldSourceFrame;
     }
 
@@ -61,7 +61,7 @@ constexpr glm::vec3 CESIUM_MAN_SCENE_POSITION = glm::vec3(0.75f, SPONZA_FLOOR_Y 
 
 }
 
-void VulkanRifeRendererApp::run() {
+void VulkanNcnnRenderer::run() {
 #if HAS_NCNN
     std::cout << "[NCNN] enabled" << std::endl;
 #else
@@ -74,15 +74,32 @@ void VulkanRifeRendererApp::run() {
     cleanup();
 }
 
-void VulkanRifeRendererApp::initVulkan() {
+void VulkanNcnnRenderer::initVulkan() {
+    initializeCoreVulkan();
+    initializeSwapchainResources();
+    initializeRenderResources();
+    initializeCommandResources();
+    initializeSceneResources();
+    initializeDescriptorResources();
+    initializeSyncResources();
+    initializeOptionalNcnn();
+}
+
+void VulkanNcnnRenderer::initializeCoreVulkan() {
     createInstance();
     setupDebugMessenger();
     createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
+}
+
+void VulkanNcnnRenderer::initializeSwapchainResources() {
     createSwapChain();
     createImageViews();
     createFrameProcessingResources();
+}
+
+void VulkanNcnnRenderer::initializeRenderResources() {
     createRenderPass();
     createDepthResources();
     createGBufferAttachments();
@@ -92,7 +109,13 @@ void VulkanRifeRendererApp::initVulkan() {
     createSkinnedGraphicsPipeline();
     createLightingPipeline();
     createFramebuffers();
+}
+
+void VulkanNcnnRenderer::initializeCommandResources() {
     createCommandPool();
+}
+
+void VulkanNcnnRenderer::initializeSceneResources() {
     createFallbackTexture();
     updateCameraFrontFromAngles();
     rotatingCubePosition = cameraPos + cameraFront * 3.0f;
@@ -105,19 +128,28 @@ void VulkanRifeRendererApp::initVulkan() {
     createSkinnedIndexBuffer();
     loadMaterialTextures();
     createUniformBuffers();
+}
+
+void VulkanNcnnRenderer::initializeDescriptorResources() {
     createDescriptorPool();
     createDescriptorSets();
     createLightingDescriptorPool();
     createLightingDescriptorSets();
+}
+
+void VulkanNcnnRenderer::initializeSyncResources() {
     createCommandBuffers();
     createSyncObjects();
+}
+
+void VulkanNcnnRenderer::initializeOptionalNcnn() {
 #if HAS_NCNN
     initNcnn();
     tryLoadDefaultNcnnModel();
 #endif
 }
 
-void VulkanRifeRendererApp::mainLoop() {
+void VulkanNcnnRenderer::mainLoop() {
     auto lastTime = std::chrono::high_resolution_clock::now();
 
     while (!glfwWindowShouldClose(window)) {
@@ -137,9 +169,9 @@ void VulkanRifeRendererApp::mainLoop() {
     vkDeviceWaitIdle(device);
 }
 
-void VulkanRifeRendererApp::cleanup() {
+void VulkanNcnnRenderer::cleanup() {
 #if HAS_NCNN
-    waitForAsyncRifeInference();
+    waitForAsyncNcnnInference();
     shutdownNcnn();
 #endif
     cleanupSwapChain();
@@ -210,7 +242,7 @@ void VulkanRifeRendererApp::cleanup() {
     glfwTerminate();
 }
 
-void VulkanRifeRendererApp::createCommandPool() {
+void VulkanNcnnRenderer::createCommandPool() {
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 
     VkCommandPoolCreateInfo poolInfo{};
@@ -223,7 +255,7 @@ void VulkanRifeRendererApp::createCommandPool() {
     }
 }
 
-void VulkanRifeRendererApp::copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer,
+void VulkanNcnnRenderer::copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer,
                                                               uint32_t imageIndex,
                                                               uint32_t offscreenSlot) {
     auto& source = offscreenFrames[offscreenSlot];
@@ -280,7 +312,7 @@ void VulkanRifeRendererApp::copyOffscreenImageToSwapchain(VkCommandBuffer comman
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
 }
 
-void VulkanRifeRendererApp::processCapturedFrameForSlot(uint32_t frameSlot) {
+void VulkanNcnnRenderer::processCapturedFrameForSlot(uint32_t frameSlot) {
     if (frameSlot >= pendingCaptureSlotByFrame.size()) {
         return;
     }
@@ -298,23 +330,23 @@ void VulkanRifeRendererApp::processCapturedFrameForSlot(uint32_t frameSlot) {
     }
 
 #if HAS_NCNN
-    if (!rifePresentationState.rifeRealtimeInterpolationEnabled || !rifeModelAttachedToRenderer) {
+    if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled || !ncnnModelAttachedToRenderer) {
         return;
     }
 
-    rifePresentationState.previousRifeGpuFrameIndex = rifePresentationState.currentRifeGpuFrameIndex;
-    rifePresentationState.currentRifeGpuFrameIndex = captureSlot;
-    rifePresentationState.hasRifeGpuFramePair =
-        rifePresentationState.previousRifeGpuFrameIndex != UINT32_MAX &&
-        rifePresentationState.previousRifeGpuFrameIndex != rifePresentationState.currentRifeGpuFrameIndex &&
-        rifePresentationState.previousRifeGpuFrameIndex < offscreenFrames.size();
+    ncnnPresentationState.previousNcnnGpuFrameIndex = ncnnPresentationState.currentNcnnGpuFrameIndex;
+    ncnnPresentationState.currentNcnnGpuFrameIndex = captureSlot;
+    ncnnPresentationState.hasNcnnGpuFramePair =
+        ncnnPresentationState.previousNcnnGpuFrameIndex != UINT32_MAX &&
+        ncnnPresentationState.previousNcnnGpuFrameIndex != ncnnPresentationState.currentNcnnGpuFrameIndex &&
+        ncnnPresentationState.previousNcnnGpuFrameIndex < offscreenFrames.size();
 
     ++capturedFrameCount;
 #endif
 
 }
 
-void VulkanRifeRendererApp::createCommandBuffers() {
+void VulkanNcnnRenderer::createCommandBuffers() {
     commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkCommandBufferAllocateInfo allocInfo{};
@@ -328,7 +360,7 @@ void VulkanRifeRendererApp::createCommandBuffers() {
     }
 }
 
-uint32_t VulkanRifeRendererApp::recordCommandBuffer(VkCommandBuffer commandBuffer,
+uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
                                                        uint32_t imageIndex,
                                                        PresentationCommandMode mode) {
     VkCommandBufferBeginInfo beginInfo{};
@@ -339,7 +371,7 @@ uint32_t VulkanRifeRendererApp::recordCommandBuffer(VkCommandBuffer commandBuffe
     }
 
     if (mode == PresentationCommandMode::DisplayInterpolatedFrame) {
-        displayRifeFrameOnSwapchain(commandBuffer, imageIndex);
+        displayNcnnFrameOnSwapchain(commandBuffer, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -349,7 +381,7 @@ uint32_t VulkanRifeRendererApp::recordCommandBuffer(VkCommandBuffer commandBuffe
     }
 
     if (mode == PresentationCommandMode::DisplayCapturedSourceFrame) {
-        displayCapturedRifeSourceOnSwapchain(commandBuffer, imageIndex);
+        displayCapturedNcnnSourceOnSwapchain(commandBuffer, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -359,7 +391,7 @@ uint32_t VulkanRifeRendererApp::recordCommandBuffer(VkCommandBuffer commandBuffe
     }
 
     if (mode == PresentationCommandMode::DisplayHeldSourceFrame) {
-        displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, rifePresentationState.rifeHeldSourceDisplayIndex);
+        displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnHeldSourceDisplayIndex);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -498,29 +530,25 @@ uint32_t VulkanRifeRendererApp::recordCommandBuffer(VkCommandBuffer commandBuffe
 
     vkCmdEndRenderPass(commandBuffer);
 
-    // Frame flow for a real frame:
+    // Frame flow:
     //   scene render -> sampled offscreen image -> fused NCNN tensor preprocessor
-    //   Real-frame presentation copies the same image directly to the swapchain.
-    // The swapchain is only a presentation target and is never an inference
-    // capture source. Once this submission's fence signals, the history manager
-    // may pair this frame with its predecessor and start RIFE.
+
 #if HAS_NCNN
-    if (rifePresentationState.rifeRealtimeInterpolationEnabled &&
-        rifeModelAttachedToRenderer &&
-        rifePresentationState.rifeLastPresentedSourceIndex < offscreenFrames.size()) {
-        // Render ahead without advancing presentation: N+1 is now available
-        // for inference, but N stays visible until N+0.5 has been presented.
-        displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, rifePresentationState.rifeLastPresentedSourceIndex);
-        rifePresentationState.rifeHeldSourceDisplayIndex = rifePresentationState.rifeLastPresentedSourceIndex;
-        rifePresentationState.rifeRenderAheadPending = true;
+    if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled &&
+        ncnnModelAttachedToRenderer &&
+        ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+        // Render ahead without advancing presentation
+        displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnLastPresentedSourceIndex);
+        ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+        ncnnPresentationState.ncnnRenderAheadPending = true;
     }
     else
 #endif
     {
-        displayRifeSourceBufferOnSwapchain(commandBuffer, imageIndex, offscreenSlot);
+        displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, offscreenSlot);
 #if HAS_NCNN
-        if (rifePresentationState.rifeRealtimeInterpolationEnabled && rifeModelAttachedToRenderer) {
-            rifePresentationState.rifeLastPresentedSourceIndex = offscreenSlot;
+        if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer) {
+            ncnnPresentationState.ncnnLastPresentedSourceIndex = offscreenSlot;
         }
 #endif
     }
@@ -532,7 +560,7 @@ uint32_t VulkanRifeRendererApp::recordCommandBuffer(VkCommandBuffer commandBuffe
     return offscreenSlot;
 }
 
-void VulkanRifeRendererApp::createSyncObjects() {
+void VulkanNcnnRenderer::createSyncObjects() {
     imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
     renderFinishedSemaphores.resize(swapChainImages.size());
     inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
@@ -558,7 +586,7 @@ void VulkanRifeRendererApp::createSyncObjects() {
     }
 }
 
-void VulkanRifeRendererApp::updateUniformBuffer(uint32_t currentImage) {
+void VulkanNcnnRenderer::updateUniformBuffer(uint32_t currentImage) {
     glm::mat4 view = glm::lookAt(
         cameraPos,
         cameraPos + cameraFront,
@@ -601,7 +629,7 @@ void VulkanRifeRendererApp::updateUniformBuffer(uint32_t currentImage) {
     memcpy(cesiumUniformBuffersMapped[currentImage], &cesiumUbo, sizeof(cesiumUbo));
 }
 
-bool VulkanRifeRendererApp::acquireFrame(uint32_t& imageIndex) {
+bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
     VkResult result = vkAcquireNextImageKHR(
         device,
         swapChain,
@@ -622,9 +650,9 @@ bool VulkanRifeRendererApp::acquireFrame(uint32_t& imageIndex) {
     return true;
 }
 
-void VulkanRifeRendererApp::updateFrameState(uint32_t frameSlot) {
+void VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
     vkWaitForFences(device, 1, &inFlightFences[frameSlot], VK_TRUE, UINT64_MAX);
-    for (auto& output : rifeOutputBuffers) {
+    for (auto& output : ncnnOutputBuffers) {
         if (output.inUseByGraphics && output.graphicsFrameSlot == frameSlot) {
             output.inUseByGraphics = false;
             output.graphicsFrameSlot = UINT32_MAX;
@@ -633,20 +661,19 @@ void VulkanRifeRendererApp::updateFrameState(uint32_t frameSlot) {
     processCapturedFrameForSlot(frameSlot);
 
 #if HAS_NCNN
-    pollAsyncRifeInference();
-    if (rifePresentationState.rifeRealtimeInterpolationEnabled) {
-        // Start RIFE work before acquiring this tick's swapchain image so compute can overlap graphics rendering.
-        if (!submitAsyncRifeInferenceIfReady() &&
-            !rifePresentationState.rifeInferenceInFlight &&
-            !rifePresentationState.hasRifeDisplayFrame &&
-            !rifePresentationState.rifeInferenceRequestWaitingForFramePair) {
-            rifePresentationState.rifeInferenceRequestWaitingForFramePair = true;
+    pollAsyncNcnnInference();
+    if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled) {
+        if (!submitAsyncNcnnInferenceIfReady() &&
+            !ncnnPresentationState.ncnnInferenceInFlight &&
+            !ncnnPresentationState.hasNcnnDisplayFrame &&
+            !ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair) {
+            ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = true;
         }
     }
 #endif
 }
 
-uint32_t VulkanRifeRendererApp::recordMainRenderCommands(uint32_t frameSlot,
+uint32_t VulkanNcnnRenderer::recordMainRenderCommands(uint32_t frameSlot,
                                                          uint32_t imageIndex,
                                                          PresentationCommandMode mode) {
     vkResetFences(device, 1, &inFlightFences[frameSlot]);
@@ -654,7 +681,7 @@ uint32_t VulkanRifeRendererApp::recordMainRenderCommands(uint32_t frameSlot,
     return recordCommandBuffer(commandBuffers[frameSlot], imageIndex, mode);
 }
 
-void VulkanRifeRendererApp::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedRifeSlot) {
+void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot) {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -680,10 +707,10 @@ void VulkanRifeRendererApp::submitGraphicsWork(uint32_t frameSlot, uint32_t imag
         throw std::runtime_error("failed to submit draw command buffer!");
     }
 
-    pendingCaptureSlotByFrame[frameSlot] = capturedRifeSlot;
+    pendingCaptureSlotByFrame[frameSlot] = capturedNcnnSlot;
 }
 
-void VulkanRifeRendererApp::handlePresentation(uint32_t imageIndex) {
+void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
@@ -710,11 +737,11 @@ void VulkanRifeRendererApp::handlePresentation(uint32_t imageIndex) {
     }
 }
 
-void VulkanRifeRendererApp::advanceFrameIndex() {
+void VulkanNcnnRenderer::advanceFrameIndex() {
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void VulkanRifeRendererApp::drawFrame() {
+void VulkanNcnnRenderer::drawFrame() {
     const uint32_t frameSlot = currentFrame;
     updateFrameState(frameSlot);
 
@@ -724,10 +751,8 @@ void VulkanRifeRendererApp::drawFrame() {
     }
 
     const PresentationCommandMode mode =
-        choosePresentationCommandMode(rifePresentationState, offscreenFrames.size());
+        choosePresentationCommandMode(ncnnPresentationState, offscreenFrames.size());
 
-    // Keep skeletal animation time moving even on RIFE presentation ticks that
-    // only display interpolated, captured, or held frames and skip scene render.
     updateSkinAnimation(frameDeltaSeconds, frameSlot);
 
     if (mode == PresentationCommandMode::RenderFrame) {
@@ -735,8 +760,8 @@ void VulkanRifeRendererApp::drawFrame() {
     }
 
     // One scheduler tick records exactly one frame source, submits it, then queues exactly one present.
-    const uint32_t capturedRifeSlot = recordMainRenderCommands(frameSlot, imageIndex, mode);
-    submitGraphicsWork(frameSlot, imageIndex, capturedRifeSlot);
+    const uint32_t capturedNcnnSlot = recordMainRenderCommands(frameSlot, imageIndex, mode);
+    submitGraphicsWork(frameSlot, imageIndex, capturedNcnnSlot);
     handlePresentation(imageIndex);
     advanceFrameIndex();
 }

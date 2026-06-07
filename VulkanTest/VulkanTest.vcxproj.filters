@@ -19,7 +19,7 @@
     <Filter Include="Source Files\Platform">
       <UniqueIdentifier>{88DE2760-7FA7-40FE-91F4-6CD00C3DC903}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\RIFE">
+    <Filter Include="Source Files\NCNN">
       <UniqueIdentifier>{01CB081D-0D40-4828-BBA8-9321AF01EA3D}</UniqueIdentifier>
     </Filter>
     <Filter Include="Header Files\App">
@@ -28,13 +28,13 @@
     <Filter Include="Header Files\Platform">
       <UniqueIdentifier>{1D7FFACF-619F-41E0-9E11-7E239425C8E2}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Third Party\RIFE">
+    <Filter Include="Third Party\NCNN Interpolation">
       <UniqueIdentifier>{8F08E9CB-E54A-4864-AF4B-DFDC9FC2AA07}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\rife\RifeRunner.cpp">
-      <Filter>Source Files\RIFE</Filter>
+    <ClCompile Include="src\ncnn\NcnnFrameInterpolator.cpp">
+      <Filter>Source Files\NCNN</Filter>
     </ClCompile>
     <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
@@ -48,7 +48,7 @@
     <ClCompile Include="src\app\RenderResources.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
-    <ClCompile Include="src\app\RifeIntegration.cpp">
+    <ClCompile Include="src\app\NcnnIntegration.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
     <ClCompile Include="src\app\Swapchain.cpp">
@@ -66,7 +66,7 @@
     <ClCompile Include="src\app\VulkanHelpers.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
-    <ClCompile Include="src\app\VulkanRifeRendererApp.cpp">
+    <ClCompile Include="src\app\VulkanNcnnRenderer.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\WindowInput.cpp">
@@ -76,10 +76,10 @@
       <Filter>Source Files\Platform</Filter>
     </ClCompile>
     <ClCompile Include="third_party\rife\rife.cpp">
-      <Filter>Third Party\RIFE</Filter>
+      <Filter>Third Party\NCNN Interpolation</Filter>
     </ClCompile>
     <ClCompile Include="third_party\rife\warp.cpp">
-      <Filter>Third Party\RIFE</Filter>
+      <Filter>Third Party\NCNN Interpolation</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -107,10 +107,10 @@
     <None Include="ncnn_setup.md" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\app\RifeRunner.h">
+    <ClInclude Include="include\app\NcnnFrameInterpolator.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
-    <ClInclude Include="include\app\VulkanRifeRendererApp.h">
+    <ClInclude Include="include\app\VulkanNcnnRenderer.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\app\VulkanHelpers.h">
@@ -125,7 +125,7 @@
     <ClInclude Include="include\app\RenderResources.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
-    <ClInclude Include="include\app\RifeIntegration.h">
+    <ClInclude Include="include\app\NcnnIntegration.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\app\DescriptorResources.h">
@@ -141,7 +141,7 @@
       <Filter>Header Files\Platform</Filter>
     </ClInclude>
     <ClInclude Include="third_party\rife\rife.h">
-      <Filter>Third Party\RIFE</Filter>
+      <Filter>Third Party\NCNN Interpolation</Filter>
     </ClInclude>
     <ClInclude Include="include\app\AppTypes.h">
       <Filter>Header Files\App</Filter>

@@ -1,12 +1,12 @@
 // Owns vertex/index/uniform buffer resources.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
 #include <cstring>
 
-void VulkanRifeRendererApp::createVertexBuffer() {
+void VulkanNcnnRenderer::createVertexBuffer() {
     VkDeviceSize bufferSize = sizeof(modelVertices[0]) * modelVertices.size();
 
     VkBuffer stagingBuffer;
@@ -28,7 +28,7 @@ void VulkanRifeRendererApp::createVertexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void VulkanRifeRendererApp::createIndexBuffer() {
+void VulkanNcnnRenderer::createIndexBuffer() {
     VkDeviceSize bufferSize = sizeof(modelIndices[0]) * modelIndices.size();
 
     VkBuffer stagingBuffer;
@@ -53,7 +53,7 @@ void VulkanRifeRendererApp::createIndexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void VulkanRifeRendererApp::createSkinnedVertexBuffer() {
+void VulkanNcnnRenderer::createSkinnedVertexBuffer() {
     if (cesiumMan.vertices.empty()) {
         return;
     }
@@ -79,7 +79,7 @@ void VulkanRifeRendererApp::createSkinnedVertexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void VulkanRifeRendererApp::createSkinnedIndexBuffer() {
+void VulkanNcnnRenderer::createSkinnedIndexBuffer() {
     if (cesiumMan.indices.empty()) {
         return;
     }
@@ -108,7 +108,7 @@ void VulkanRifeRendererApp::createSkinnedIndexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void VulkanRifeRendererApp::createUniformBuffers() {
+void VulkanNcnnRenderer::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
     VkDeviceSize skinBufferSize = sizeof(SkinUBO);
 

@@ -1,5 +1,5 @@
 // Owns Assimp model import and procedural scene geometry.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -100,7 +100,7 @@ void computeGlobalTransforms(SkinnedModel& model, int nodeIndex, const glm::mat4
 
 }
 
-void VulkanRifeRendererApp::loadModel(const std::string& path) {
+void VulkanNcnnRenderer::loadModel(const std::string& path) {
     Assimp::Importer importer;
 
     const aiScene* scene = importer.ReadFile(
@@ -201,7 +201,7 @@ void VulkanRifeRendererApp::loadModel(const std::string& path) {
 
 }
 
-void VulkanRifeRendererApp::loadCesiumMan(const std::string& path) {
+void VulkanNcnnRenderer::loadCesiumMan(const std::string& path) {
     tinygltf::TinyGLTF loader;
     tinygltf::Model gltfModel;
     std::string error;
@@ -444,7 +444,7 @@ void VulkanRifeRendererApp::loadCesiumMan(const std::string& path) {
     materials.push_back(cesiumMan.material);
 }
 
-void VulkanRifeRendererApp::updateSkinAnimation(float deltaTime, uint32_t currentImage) {
+void VulkanNcnnRenderer::updateSkinAnimation(float deltaTime, uint32_t currentImage) {
     SkinUBO skinUbo{};
     for (uint32_t i = 0; i < MAX_SKIN_JOINTS; ++i) {
         skinUbo.jointMatrices[i] = glm::mat4(1.0f);
@@ -521,7 +521,7 @@ void VulkanRifeRendererApp::updateSkinAnimation(float deltaTime, uint32_t curren
     memcpy(skinUniformBuffersMapped[currentImage], &skinUbo, sizeof(skinUbo));
 }
 
-void VulkanRifeRendererApp::appendRotatingCubeGeometry() {
+void VulkanNcnnRenderer::appendRotatingCubeGeometry() {
     rotatingCubeIndexOffset = static_cast<uint32_t>(modelIndices.size());
 
     const float h = 0.5f;

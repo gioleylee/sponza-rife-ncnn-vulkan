@@ -1,4 +1,4 @@
-#include "RifeRunner.h"
+#include "NcnnFrameInterpolator.h"
 
 #if HAS_NCNN
 
@@ -16,34 +16,34 @@ ncnn::Layer* CreateWarpLayer(void*) {
 
 } // namespace
 
-bool RifeRunner::initialize(ncnn::Net& targetNet,
+bool NcnnFrameInterpolator::initialize(ncnn::Net& targetNet,
                             const std::string& paramPath,
                             const std::string& binPath,
                             VkDevice rendererDevice,
                             int ncnnDeviceIndex) {
     if (!std::filesystem::exists(paramPath)) {
-        std::cerr << "[RIFE] param file not found: " << paramPath << std::endl;
+        std::cerr << "[NCNN] param file not found: " << paramPath << std::endl;
         return false;
     }
     if (!std::filesystem::exists(binPath)) {
-        std::cerr << "[RIFE] bin file not found: " << binPath << std::endl;
+        std::cerr << "[NCNN] bin file not found: " << binPath << std::endl;
         return false;
     }
 
     targetNet.clear();
-    rifeEngine.reset();
+    ncnnEngine.reset();
     rendererVkdev.reset();
     setVulkanDeviceCalled = false;
 
     if (!targetNet.opt.use_vulkan_compute) {
-        std::cerr << "[RIFE] GPU inference requested but ncnn Vulkan compute is unavailable" << std::endl;
+        std::cerr << "[NCNN] GPU inference requested but ncnn Vulkan compute is unavailable" << std::endl;
         loadedParamPath.clear();
         loadedBinPath.clear();
         return false;
     }
 
     if (rendererDevice == VK_NULL_HANDLE || ncnnDeviceIndex < 0) {
-        std::cerr << "[RIFE] renderer VkDevice is not available for ncnn interop" << std::endl;
+        std::cerr << "[NCNN] renderer VkDevice is not available for ncnn interop" << std::endl;
         loadedParamPath.clear();
         loadedBinPath.clear();
         return false;
@@ -55,7 +55,7 @@ bool RifeRunner::initialize(ncnn::Net& targetNet,
 
     if (!warpLayerRegistered) {
         if (targetNet.register_custom_layer("rife.Warp", CreateWarpLayer) != 0) {
-            std::cerr << "[RIFE] failed to register custom layer: rife.Warp" << std::endl;
+            std::cerr << "[NCNN] failed to register custom layer: rife.Warp" << std::endl;
             loadedParamPath.clear();
             loadedBinPath.clear();
             return false;
@@ -65,7 +65,7 @@ bool RifeRunner::initialize(ncnn::Net& targetNet,
 
     const int paramRet = targetNet.load_param(paramPath.c_str());
     if (paramRet != 0) {
-        std::cerr << "[RIFE] failed to load param: " << paramPath << " (code=" << paramRet << ")" << std::endl;
+        std::cerr << "[NCNN] failed to load param: " << paramPath << " (code=" << paramRet << ")" << std::endl;
         loadedParamPath.clear();
         loadedBinPath.clear();
         return false;
@@ -73,7 +73,7 @@ bool RifeRunner::initialize(ncnn::Net& targetNet,
 
     const int binRet = targetNet.load_model(binPath.c_str());
     if (binRet != 0) {
-        std::cerr << "[RIFE] failed to load model: " << binPath << " (code=" << binRet << ")" << std::endl;
+        std::cerr << "[NCNN] failed to load model: " << binPath << " (code=" << binRet << ")" << std::endl;
         loadedParamPath.clear();
         loadedBinPath.clear();
         return false;
@@ -89,24 +89,24 @@ bool RifeRunner::initialize(ncnn::Net& targetNet,
     const int engineLoadRet = engine->load(modelDir.string(), modelName.string());
 #endif
     if (engineLoadRet != 0) {
-        std::cerr << "[RIFE] failed to initialize Vulkan RIFE engine from: "
+        std::cerr << "[NCNN] failed to initialize Vulkan frame interpolation engine from: "
                   << modelDir.string() << " (code=" << engineLoadRet << ")" << std::endl;
         loadedParamPath.clear();
         loadedBinPath.clear();
         return false;
     }
 
-    rifeEngine = std::move(engine);
+    ncnnEngine = std::move(engine);
     loadedParamPath = paramPath;
     loadedBinPath = binPath;
     return true;
 }
 
-bool RifeRunner::isReady() const {
-    return rifeEngine && !loadedParamPath.empty() && !loadedBinPath.empty();
+bool NcnnFrameInterpolator::isReady() const {
+    return ncnnEngine && !loadedParamPath.empty() && !loadedBinPath.empty();
 }
 
-int RifeRunner::processGpuRgbaFrames(VkImage prevImage,
+int NcnnFrameInterpolator::processGpuRgbaFrames(VkImage prevImage,
                                      VkImageView prevImageView,
                                      VkDeviceMemory prevMemory,
                                      VkImage currImage,
@@ -176,15 +176,15 @@ int RifeRunner::processGpuRgbaFrames(VkImage prevImage,
     ncnn::VkImageMat curr(width, height, &currWrapped, (size_t)4u, 1, nullptr);
     ncnn::VkMat out(width, height, &outWrapped, (size_t)4u, 1, nullptr);
 
-    return rifeEngine->process_v4_gpu(prev, curr, width, height, inferenceWidth, inferenceHeight, timestep, out);
+    return ncnnEngine->process_v4_gpu(prev, curr, width, height, inferenceWidth, inferenceHeight, timestep, out);
 }
 
-bool RifeRunner::wasVulkanDeviceSet() const {
+bool NcnnFrameInterpolator::wasVulkanDeviceSet() const {
     return setVulkanDeviceCalled;
 }
 
-void RifeRunner::reset() {
-    rifeEngine.reset();
+void NcnnFrameInterpolator::reset() {
+    ncnnEngine.reset();
     rendererVkdev.reset();
     loadedParamPath.clear();
     loadedBinPath.clear();

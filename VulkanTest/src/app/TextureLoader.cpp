@@ -1,5 +1,5 @@
 // Owns texture loading, fallback texture creation, image views, and mipmaps.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <vulkan/vulkan.h>
 
@@ -15,7 +15,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-VkImageView VulkanRifeRendererApp::createImageView(VkImage image, VkFormat format, uint32_t mipLevels) {
+VkImageView VulkanNcnnRenderer::createImageView(VkImage image, VkFormat format, uint32_t mipLevels) {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
@@ -39,7 +39,7 @@ VkImageView VulkanRifeRendererApp::createImageView(VkImage image, VkFormat forma
     return imageView;
 }
 
-void VulkanRifeRendererApp::loadMaterialTextures() {
+void VulkanNcnnRenderer::loadMaterialTextures() {
     const std::string fallback = "";
 
     for (auto& mat : materials) {
@@ -126,7 +126,7 @@ void VulkanRifeRendererApp::loadMaterialTextures() {
     }
 }
 
-void VulkanRifeRendererApp::generateMipmaps(VkImage image, VkFormat imageFormat,
+void VulkanNcnnRenderer::generateMipmaps(VkImage image, VkFormat imageFormat,
     int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
 
     VkCommandBuffer cmd = beginSingleTimeCommands();
@@ -211,7 +211,7 @@ void VulkanRifeRendererApp::generateMipmaps(VkImage image, VkFormat imageFormat,
     endSingleTimeCommands(cmd);
 }
 
-void VulkanRifeRendererApp::createFallbackTexture() {
+void VulkanNcnnRenderer::createFallbackTexture() {
     const uint32_t textureWidth = 64;
     const uint32_t textureHeight = 64;
     const auto rgba = [](uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {

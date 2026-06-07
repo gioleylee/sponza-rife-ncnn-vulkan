@@ -1,5 +1,5 @@
 // Owns render pass, depth/G-buffer targets, framebuffers, pipelines, and related cleanup.
-#include "VulkanRifeRendererApp.h"
+#include "VulkanNcnnRenderer.h"
 
 #include <vulkan/vulkan.h>
 
@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-void VulkanRifeRendererApp::createRenderPass() {
+void VulkanNcnnRenderer::createRenderPass() {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapChainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -131,7 +131,7 @@ void VulkanRifeRendererApp::createRenderPass() {
     }
 }
 
-void VulkanRifeRendererApp::createDepthResources() {
+void VulkanNcnnRenderer::createDepthResources() {
     VkFormat depthFormat = findDepthFormat();
 
     depthImages.resize(offscreenFrames.size());
@@ -154,7 +154,7 @@ void VulkanRifeRendererApp::createDepthResources() {
     }
 }
 
-void VulkanRifeRendererApp::createGBufferAttachments() {
+void VulkanNcnnRenderer::createGBufferAttachments() {
     VkFormat normalFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     gNormalImages.resize(offscreenFrames.size());
     gNormalImageMemories.resize(offscreenFrames.size());
@@ -216,7 +216,7 @@ void VulkanRifeRendererApp::createGBufferAttachments() {
     }
 }
 
-void VulkanRifeRendererApp::createFramebuffers() {
+void VulkanNcnnRenderer::createFramebuffers() {
     offscreenFramebuffers.resize(offscreenFrames.size());
 
     for (size_t i = 0; i < offscreenFrames.size(); i++) {
@@ -243,7 +243,7 @@ void VulkanRifeRendererApp::createFramebuffers() {
     }
 }
 
-void VulkanRifeRendererApp::createGraphicsPipeline() {
+void VulkanNcnnRenderer::createGraphicsPipeline() {
     auto vertShaderCode = readFile("shaders/vert.spv");
     auto fragShaderCode = readFile("shaders/frag.spv");
 
@@ -370,7 +370,7 @@ void VulkanRifeRendererApp::createGraphicsPipeline() {
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-void VulkanRifeRendererApp::createSkinnedGraphicsPipeline() {
+void VulkanNcnnRenderer::createSkinnedGraphicsPipeline() {
     auto vertShaderCode = readFile("shaders/skinned.vert.spv");
     auto fragShaderCode = readFile("shaders/frag.spv");
 
@@ -484,7 +484,7 @@ void VulkanRifeRendererApp::createSkinnedGraphicsPipeline() {
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-void VulkanRifeRendererApp::createLightingPipeline() {
+void VulkanNcnnRenderer::createLightingPipeline() {
     auto vertShaderCode = readFile("shaders/deferred.vert.spv");
     auto fragShaderCode = readFile("shaders/deferred.frag.spv");
 
@@ -605,14 +605,14 @@ void VulkanRifeRendererApp::createLightingPipeline() {
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-void VulkanRifeRendererApp::cleanupFramebuffers() {
+void VulkanNcnnRenderer::cleanupFramebuffers() {
     for (auto framebuffer : offscreenFramebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
     offscreenFramebuffers.clear();
 }
 
-void VulkanRifeRendererApp::cleanupDepthResources() {
+void VulkanNcnnRenderer::cleanupDepthResources() {
     for (size_t i = 0; i < depthImageViews.size(); ++i) {
         vkDestroyImageView(device, depthImageViews[i], nullptr);
         vkDestroyImage(device, depthImages[i], nullptr);
@@ -623,7 +623,7 @@ void VulkanRifeRendererApp::cleanupDepthResources() {
     depthImageMemories.clear();
 }
 
-void VulkanRifeRendererApp::cleanupGBufferAttachments() {
+void VulkanNcnnRenderer::cleanupGBufferAttachments() {
     for (size_t i = 0; i < gNormalImageViews.size(); ++i) {
         vkDestroyImageView(device, gNormalImageViews[i], nullptr);
         vkDestroyImage(device, gNormalImages[i], nullptr);
@@ -652,7 +652,7 @@ void VulkanRifeRendererApp::cleanupGBufferAttachments() {
     gPositionImageMemories.clear();
 }
 
-void VulkanRifeRendererApp::cleanupRenderPipelines() {
+void VulkanNcnnRenderer::cleanupRenderPipelines() {
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipeline(device, skinnedGraphicsPipeline, nullptr);
     vkDestroyPipeline(device, lightingPipeline, nullptr);
@@ -661,7 +661,7 @@ void VulkanRifeRendererApp::cleanupRenderPipelines() {
     vkDestroyRenderPass(device, renderPass, nullptr);
 }
 
-VkShaderModule VulkanRifeRendererApp::createShaderModule(const std::vector<char>& code) {
+VkShaderModule VulkanNcnnRenderer::createShaderModule(const std::vector<char>& code) {
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
@@ -675,7 +675,7 @@ VkShaderModule VulkanRifeRendererApp::createShaderModule(const std::vector<char>
     return shaderModule;
 }
 
-std::vector<char> VulkanRifeRendererApp::readFile(const std::string& filename) {
+std::vector<char> VulkanNcnnRenderer::readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {

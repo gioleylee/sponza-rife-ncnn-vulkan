@@ -249,8 +249,6 @@ private:
 
     void mainLoop();
 
-    void cleanupSwapChain();
-
     void cleanup();
 
 #if HAS_NCNN
@@ -267,7 +265,7 @@ private:
     void applyNcnnVulkanOptions();
 #endif
 
-    void recreateSwapChain();
+#include "Swapchain.h"
 
     void createInstance();
 
@@ -279,25 +277,17 @@ private:
 
     void createLogicalDevice();
 
-    void createSwapChain();
-
-    void createImageViews();
-
     VkFormat findDepthFormat();
 
     void createGBufferAttachments();
 
     void createRenderPass();
 
-    void createDescriptorSetLayout();
-
-    void createLightingDescriptorSetLayout();
+#include "DescriptorResources.h"
 
     void createGraphicsPipeline();
 
     void createLightingPipeline();
-
-    void createFramebuffers();
 
     void createDepthResources();
 
@@ -309,14 +299,6 @@ private:
 
 
     void createUniformBuffers();
-
-    void createDescriptorPool();
-
-    void createDescriptorSets();
-
-    void createLightingDescriptorPool();
-
-    void createLightingDescriptorSets();
 
 #include "VulkanHelpers.h"
 
@@ -375,21 +357,11 @@ private:
 
     void processMouseLook();
 
-    void loadModel(const std::string& path);
-
-    void appendRotatingCubeGeometry();
+#include "ModelLoader.h"
 
 #include "TextureLoader.h"
 
     VkShaderModule createShaderModule(const std::vector<char>& code);
-
-    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-
-    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-
-    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
     bool isDeviceSuitable(VkPhysicalDevice device);
 

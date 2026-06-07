@@ -1,38 +1,9 @@
-// Owns framebuffer, depth, G-buffer attachment, and image-view resources.
+// Owns depth and G-buffer attachment resources.
 #include "VulkanRifeRendererApp.h"
 
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
-#include <stdexcept>
-
-void VulkanRifeRendererApp::createFramebuffers() {
-    offscreenFramebuffers.resize(offscreenFrames.size());
-
-    for (size_t i = 0; i < offscreenFrames.size(); i++) {
-        VkImageView attachments[] = {
-            offscreenFrames[i].imageView,
-            gNormalImageViews[i],
-            gAlbedoImageViews[i],
-            gPositionImageViews[i],
-            depthImageViews[i]
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = 5;
-        framebufferInfo.pAttachments = attachments;
-        framebufferInfo.width = swapChainExtent.width;
-        framebufferInfo.height = swapChainExtent.height;
-        framebufferInfo.layers = 1;
-
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &offscreenFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create offscreen framebuffer!");
-        }
-    }
-}
-
 void VulkanRifeRendererApp::createDepthResources() {
     VkFormat depthFormat = findDepthFormat();
 

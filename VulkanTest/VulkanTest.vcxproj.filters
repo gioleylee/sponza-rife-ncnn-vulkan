@@ -39,7 +39,16 @@
     <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\app\DescriptorResources.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\ModelLoader.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
     <ClCompile Include="src\app\RenderResources.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\Swapchain.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
     <ClCompile Include="src\app\TextureLoader.cpp">
@@ -99,6 +108,15 @@
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\app\TextureLoader.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\ModelLoader.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\DescriptorResources.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\Swapchain.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\platform\WindowInput.h">

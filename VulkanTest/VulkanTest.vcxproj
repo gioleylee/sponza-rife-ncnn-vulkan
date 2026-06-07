@@ -150,7 +150,10 @@
   <ItemGroup>
     <ClCompile Include="src\rife\RifeRunner.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\app\DescriptorResources.cpp" />
+    <ClCompile Include="src\app\ModelLoader.cpp" />
     <ClCompile Include="src\app\RenderResources.cpp" />
+    <ClCompile Include="src\app\Swapchain.cpp" />
     <ClCompile Include="src\app\TextureLoader.cpp" />
     <ClCompile Include="src\app\VulkanBuffers.cpp" />
     <ClCompile Include="src\app\VulkanDevice.cpp" />
@@ -177,6 +180,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\app\AppTypes.h" />
+    <ClInclude Include="include\app\DescriptorResources.h" />
+    <ClInclude Include="include\app\ModelLoader.h" />
+    <ClInclude Include="include\app\Swapchain.h" />
     <ClInclude Include="include\app\TextureLoader.h" />
     <ClInclude Include="include\app\VulkanHelpers.h" />
     <ClInclude Include="include\app\VulkanRifeRendererApp.h" />

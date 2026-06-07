@@ -1,4 +1,4 @@
-// Owns render pass, descriptor set layouts, shader loading, and graphics pipelines.
+// Owns render pass, shader loading, and graphics pipelines.
 #include "VulkanRifeRendererApp.h"
 
 #include <vulkan/vulkan.h>
@@ -128,71 +128,6 @@ void VulkanRifeRendererApp::createRenderPass() {
 
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
-    }
-}
-
-void VulkanRifeRendererApp::createDescriptorSetLayout() {
-    VkDescriptorSetLayoutBinding uboLayoutBinding{}; // UBO
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.pImmutableSamplers = nullptr;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutBinding samplerLayoutBinding{}; // textures
-    samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorCount = 1;
-    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.pImmutableSamplers = nullptr;
-    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-        uboLayoutBinding, samplerLayoutBinding
-    }; // gather all bindings
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{}; // info
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor set layout!");
-    } // creation
-}
-
-void VulkanRifeRendererApp::createLightingDescriptorSetLayout() {
-    VkDescriptorSetLayoutBinding normalInputBinding{};
-    normalInputBinding.binding = 0;
-    normalInputBinding.descriptorCount = 1;
-    normalInputBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    normalInputBinding.pImmutableSamplers = nullptr;
-    normalInputBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding albedoInputBinding{};
-    albedoInputBinding.binding = 1;
-    albedoInputBinding.descriptorCount = 1;
-    albedoInputBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    albedoInputBinding.pImmutableSamplers = nullptr;
-    albedoInputBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding positionInputBinding{};
-    positionInputBinding.binding = 2;
-    positionInputBinding.descriptorCount = 1;
-    positionInputBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    positionInputBinding.pImmutableSamplers = nullptr;
-    positionInputBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-        normalInputBinding, albedoInputBinding, positionInputBinding
-    };
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &lightingDescriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create lighting descriptor set layout!");
     }
 }
 

@@ -66,6 +66,9 @@
     <ClCompile Include="src\app\VulkanHelpers.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
+    <ClCompile Include="src\app\VulkanRifeRendererApp.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
     <ClCompile Include="src\platform\WindowInput.cpp">
       <Filter>Source Files\Platform</Filter>
     </ClCompile>
@@ -93,6 +96,12 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="shaders\compile.bat">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\skinned.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\skinned.vert.spv">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="ncnn_setup.md" />
@@ -136,6 +145,12 @@
     </ClInclude>
     <ClInclude Include="include\app\AppTypes.h">
       <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\json.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\tiny_gltf.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

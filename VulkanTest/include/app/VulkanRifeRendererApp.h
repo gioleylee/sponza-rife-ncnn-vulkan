@@ -113,6 +113,7 @@ private:
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    VkPipeline skinnedGraphicsPipeline = VK_NULL_HANDLE;
     VkDescriptorSetLayout lightingDescriptorSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout lightingPipelineLayout = VK_NULL_HANDLE;
     VkPipeline lightingPipeline = VK_NULL_HANDLE;
@@ -123,6 +124,10 @@ private:
     VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
     VkBuffer indexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer skinnedVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory skinnedVertexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer skinnedIndexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory skinnedIndexBufferMemory = VK_NULL_HANDLE;
 
     VkImage fallbackImage = VK_NULL_HANDLE;
     VkDeviceMemory fallbackImageMemory = VK_NULL_HANDLE;
@@ -135,6 +140,12 @@ private:
     std::vector<VkBuffer> cubeUniformBuffers;
     std::vector<VkDeviceMemory> cubeUniformBuffersMemory;
     std::vector<void*> cubeUniformBuffersMapped;
+    std::vector<VkBuffer> cesiumUniformBuffers;
+    std::vector<VkDeviceMemory> cesiumUniformBuffersMemory;
+    std::vector<void*> cesiumUniformBuffersMapped;
+    std::vector<VkBuffer> skinUniformBuffers;
+    std::vector<VkDeviceMemory> skinUniformBuffersMemory;
+    std::vector<void*> skinUniformBuffersMapped;
 
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> descriptorSets;
@@ -167,6 +178,7 @@ private:
     std::vector<uint32_t> modelIndices;
     std::vector<Material> materials;
     std::vector<Submesh> submeshes;
+    SkinnedModel cesiumMan;
     uint32_t rotatingCubeIndexOffset = 0;
     uint32_t rotatingCubeIndexCount = 0;
     glm::vec3 rotatingCubePosition = glm::vec3(0.0f);
@@ -181,6 +193,7 @@ private:
 
     float modelScale = 0.01f;
     float elapsedTimeSeconds = 0.0f;
+    float frameDeltaSeconds = 0.0f;
 
     bool firstMouse = true;
     double lastMouseX = 0.0;
@@ -244,6 +257,9 @@ private:
 
     void createIndexBuffer();
 
+    void createSkinnedVertexBuffer();
+
+    void createSkinnedIndexBuffer();
 
     void createUniformBuffers();
 
@@ -264,6 +280,8 @@ private:
 #include "RifeIntegration.h"
 
     void updateUniformBuffer(uint32_t currentImage);
+
+    void updateSkinAnimation(float deltaTime, uint32_t currentImage);
 
     bool acquireFrame(uint32_t& imageIndex);
 

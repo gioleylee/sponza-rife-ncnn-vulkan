@@ -154,10 +154,10 @@ bool VulkanRifeRendererApp::loadNcnnModel(const std::string& paramPath, const st
 }
 
 void VulkanRifeRendererApp::tryLoadDefaultNcnnModel() {
-    const std::string optimizedParam = "assets/models/rife-v4/flownet-opt.param";
-    const std::string optimizedBin = "assets/models/rife-v4/flownet-opt.bin";
-    const std::string defaultParam = "assets/models/rife-v4/flownet.param";
-    const std::string defaultBin = "assets/models/rife-v4/flownet.bin";
+    const std::string optimizedParam = "assets/nn_models/rife-v4/flownet-opt.param";
+    const std::string optimizedBin = "assets/nn_models/rife-v4/flownet-opt.bin";
+    const std::string defaultParam = "assets/nn_models/rife-v4/flownet.param";
+    const std::string defaultBin = "assets/nn_models/rife-v4/flownet.bin";
 
     const bool hasOptimizedModel =
         std::filesystem::exists(optimizedParam) && std::filesystem::exists(optimizedBin);

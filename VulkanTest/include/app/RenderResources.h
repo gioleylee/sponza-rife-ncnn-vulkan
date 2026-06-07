@@ -8,6 +8,8 @@ void createFramebuffers();
 
 void createGraphicsPipeline();
 
+void createSkinnedGraphicsPipeline();
+
 void createLightingPipeline();
 
 void cleanupFramebuffers();

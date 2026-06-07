@@ -24,8 +24,15 @@ void VulkanRifeRendererApp::createDescriptorSetLayout() {
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-        uboLayoutBinding, samplerLayoutBinding
+    VkDescriptorSetLayoutBinding skinLayoutBinding{};
+    skinLayoutBinding.binding = 2;
+    skinLayoutBinding.descriptorCount = 1;
+    skinLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    skinLayoutBinding.pImmutableSamplers = nullptr;
+    skinLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
+        uboLayoutBinding, samplerLayoutBinding, skinLayoutBinding
     }; // gather all bindings
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{}; // info
@@ -82,7 +89,7 @@ void VulkanRifeRendererApp::createDescriptorPool() {
 
     VkDescriptorPoolSize uboPoolSize{}; // UBO info
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboPoolSize.descriptorCount = totalSets;
+    uboPoolSize.descriptorCount = totalSets * 2;
 
     VkDescriptorPoolSize samplerPoolSize{}; // sampler info
     samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -123,7 +130,8 @@ void VulkanRifeRendererApp::createDescriptorSets() {
             uint32_t idx = frame * setsPerFrame + m;
 
             VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = uniformBuffers[frame];
+            const bool cesiumMaterial = !cesiumMan.vertices.empty() && m == materialCount - 1;
+            bufferInfo.buffer = cesiumMaterial ? cesiumUniformBuffers[frame] : uniformBuffers[frame];
             bufferInfo.offset = 0;
             bufferInfo.range = sizeof(UniformBufferObject);
 
@@ -142,7 +150,12 @@ void VulkanRifeRendererApp::createDescriptorSets() {
                 imageInfo.sampler = fallbackSampler;
             }
 
-            std::array<VkWriteDescriptorSet, 2> writes{};
+            VkDescriptorBufferInfo skinBufferInfo{};
+            skinBufferInfo.buffer = skinUniformBuffers[frame];
+            skinBufferInfo.offset = 0;
+            skinBufferInfo.range = sizeof(SkinUBO);
+
+            std::array<VkWriteDescriptorSet, 3> writes{};
 
             writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[0].dstSet = descriptorSets[idx];
@@ -159,6 +172,14 @@ void VulkanRifeRendererApp::createDescriptorSets() {
             writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[1].descriptorCount = 1;
             writes[1].pImageInfo = &imageInfo;
+
+            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[2].dstSet = descriptorSets[idx];
+            writes[2].dstBinding = 2;
+            writes[2].dstArrayElement = 0;
+            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[2].descriptorCount = 1;
+            writes[2].pBufferInfo = &skinBufferInfo;
 
             vkUpdateDescriptorSets(device,
                 static_cast<uint32_t>(writes.size()), writes.data(),
@@ -177,7 +198,12 @@ void VulkanRifeRendererApp::createDescriptorSets() {
         cubeImageInfo.imageView = fallbackImageView;
         cubeImageInfo.sampler = fallbackSampler;
 
-        std::array<VkWriteDescriptorSet, 2> cubeWrites{};
+        VkDescriptorBufferInfo cubeSkinBufferInfo{};
+        cubeSkinBufferInfo.buffer = skinUniformBuffers[frame];
+        cubeSkinBufferInfo.offset = 0;
+        cubeSkinBufferInfo.range = sizeof(SkinUBO);
+
+        std::array<VkWriteDescriptorSet, 3> cubeWrites{};
 
         cubeWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         cubeWrites[0].dstSet = descriptorSets[cubeSetIndex];
@@ -194,6 +220,14 @@ void VulkanRifeRendererApp::createDescriptorSets() {
         cubeWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         cubeWrites[1].descriptorCount = 1;
         cubeWrites[1].pImageInfo = &cubeImageInfo;
+
+        cubeWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        cubeWrites[2].dstSet = descriptorSets[cubeSetIndex];
+        cubeWrites[2].dstBinding = 2;
+        cubeWrites[2].dstArrayElement = 0;
+        cubeWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        cubeWrites[2].descriptorCount = 1;
+        cubeWrites[2].pBufferInfo = &cubeSkinBufferInfo;
 
         vkUpdateDescriptorSets(device,
             static_cast<uint32_t>(cubeWrites.size()), cubeWrites.data(),

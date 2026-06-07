@@ -81,7 +81,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party;$(ProjectDir)third_party\rife;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -97,7 +97,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party;$(ProjectDir)third_party\rife;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -111,7 +111,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party;$(ProjectDir)third_party\rife;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -134,7 +134,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party\rife;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\projects\libraries\ncnn\build\install\include;$(VULKAN_SDK)\Include;$(GLM_DIR);C:\projects\libraries\include\glfw-3.4.bin.WIN64\include;$(ProjectDir)include\app;$(ProjectDir)include\platform;$(ProjectDir)third_party;$(ProjectDir)third_party\rife;C:\projects\libraries\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -159,6 +159,7 @@
     <ClCompile Include="src\app\VulkanBuffers.cpp" />
     <ClCompile Include="src\app\VulkanDevice.cpp" />
     <ClCompile Include="src\app\VulkanHelpers.cpp" />
+    <ClCompile Include="src\app\VulkanRifeRendererApp.cpp" />
     <ClCompile Include="src\platform\WindowInput.cpp" />
     <ClCompile Include="src\platform\validation_layers.cpp" />
     <ClCompile Include="third_party\rife\rife.cpp">
@@ -177,6 +178,8 @@
     <None Include="shaders\deferred.vert" />
     <None Include="shaders\shader.frag" />
     <None Include="shaders\shader.vert" />
+    <None Include="shaders\skinned.vert" />
+    <None Include="shaders\skinned.vert.spv" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\app\AppTypes.h" />
@@ -191,6 +194,8 @@
     <ClInclude Include="include\app\RifeRunner.h" />
     <ClInclude Include="include\platform\WindowInput.h" />
     <ClInclude Include="include\platform\validation_layers.h" />
+    <ClInclude Include="third_party\json.hpp" />
+    <ClInclude Include="third_party\tiny_gltf.h" />
     <ClInclude Include="third_party\rife\rife.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-void HelloTriangleApplication::initWindow() {
+void VulkanRifeRendererApp::initWindow() {
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -17,12 +17,12 @@ void HelloTriangleApplication::initWindow() {
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 }
 
-void HelloTriangleApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+void VulkanRifeRendererApp::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    auto app = reinterpret_cast<VulkanRifeRendererApp*>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
 }
 
-void HelloTriangleApplication::updateCameraFrontFromAngles() {
+void VulkanRifeRendererApp::updateCameraFrontFromAngles() {
     float radYaw = glm::radians(cameraYaw);
     float radPitch = glm::radians(cameraPitch);
     glm::vec3 front;
@@ -32,7 +32,7 @@ void HelloTriangleApplication::updateCameraFrontFromAngles() {
     cameraFront = glm::normalize(front);
 }
 
-void HelloTriangleApplication::processInput(float deltaTime) {
+void VulkanRifeRendererApp::processInput(float deltaTime) {
     float velocity = cameraSpeed * deltaTime;
     bool cameraOrientationChanged = false;
 
@@ -180,7 +180,7 @@ void HelloTriangleApplication::processInput(float deltaTime) {
     }
 }
 
-void HelloTriangleApplication::processMouseLook() {
+void VulkanRifeRendererApp::processMouseLook() {
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) != GLFW_PRESS) {
         firstMouse = true;
         return;

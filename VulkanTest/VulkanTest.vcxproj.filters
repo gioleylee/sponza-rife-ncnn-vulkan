@@ -86,7 +86,7 @@
     <ClInclude Include="include\app\RifeRunner.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
-    <ClInclude Include="include\app\HelloTriangleApplication.h">
+    <ClInclude Include="include\app\VulkanRifeRendererApp.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\platform\WindowInput.h">

@@ -1,5 +1,5 @@
 // Owns Vulkan instance/device setup, swapchain creation, and queue-family selection.
-#include "HelloTriangleApplication.h"
+#include "VulkanRifeRendererApp.h"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <vector>
 
-void HelloTriangleApplication::createInstance() {
+void VulkanRifeRendererApp::createInstance() {
     if (validation::Enabled && !validation::checkLayerSupport()) {
         throw std::runtime_error("validation layers requested, but not available!");
     }
@@ -52,7 +52,7 @@ void HelloTriangleApplication::createInstance() {
     }
 }
 
-void HelloTriangleApplication::setupDebugMessenger() {
+void VulkanRifeRendererApp::setupDebugMessenger() {
     if (!validation::Enabled) return;
 
     VkDebugUtilsMessengerCreateInfoEXT createInfo;
@@ -63,13 +63,13 @@ void HelloTriangleApplication::setupDebugMessenger() {
     }
 }
 
-void HelloTriangleApplication::createSurface() {
+void VulkanRifeRendererApp::createSurface() {
     if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
         throw std::runtime_error("failed to create window surface!");
     }
 }
 
-void HelloTriangleApplication::pickPhysicalDevice() {
+void VulkanRifeRendererApp::pickPhysicalDevice() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
@@ -117,7 +117,7 @@ void HelloTriangleApplication::pickPhysicalDevice() {
               << std::endl;
 }
 
-void HelloTriangleApplication::createLogicalDevice() {
+void VulkanRifeRendererApp::createLogicalDevice() {
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
     uint32_t queueFamilyCount = 0;
@@ -308,7 +308,7 @@ void HelloTriangleApplication::createLogicalDevice() {
 #endif
 }
 
-void HelloTriangleApplication::createSwapChain() {
+void VulkanRifeRendererApp::createSwapChain() {
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
 
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -363,7 +363,7 @@ void HelloTriangleApplication::createSwapChain() {
     swapChainExtent = extent;
 }
 
-void HelloTriangleApplication::recreateSwapChain() {
+void VulkanRifeRendererApp::recreateSwapChain() {
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     while (width == 0 || height == 0) {
@@ -398,7 +398,7 @@ void HelloTriangleApplication::recreateSwapChain() {
     createLightingDescriptorSets();
 }
 
-void HelloTriangleApplication::cleanupSwapChain() {
+void VulkanRifeRendererApp::cleanupSwapChain() {
     for (auto framebuffer : offscreenFramebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
@@ -455,7 +455,7 @@ void HelloTriangleApplication::cleanupSwapChain() {
     vkDestroySwapchainKHR(device, swapChain, nullptr);
 }
 
-void HelloTriangleApplication::createImageViews() {
+void VulkanRifeRendererApp::createImageViews() {
     swapChainImageViews.resize(swapChainImages.size());
 
     for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -480,7 +480,7 @@ void HelloTriangleApplication::createImageViews() {
     }
 }
 
-VkSurfaceFormatKHR HelloTriangleApplication::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+VkSurfaceFormatKHR VulkanRifeRendererApp::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
     for (const auto& availableFormat : availableFormats) {
         if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             return availableFormat;
@@ -490,7 +490,7 @@ VkSurfaceFormatKHR HelloTriangleApplication::chooseSwapSurfaceFormat(const std::
     return availableFormats[0];
 }
 
-VkPresentModeKHR HelloTriangleApplication::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+VkPresentModeKHR VulkanRifeRendererApp::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
     for (const auto& availablePresentMode : availablePresentModes) {
         if (availablePresentMode == VK_PRESENT_MODE_FIFO_KHR) {
             return availablePresentMode;
@@ -500,7 +500,7 @@ VkPresentModeKHR HelloTriangleApplication::chooseSwapPresentMode(const std::vect
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D HelloTriangleApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+VkExtent2D VulkanRifeRendererApp::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return capabilities.currentExtent;
     }
@@ -520,7 +520,7 @@ VkExtent2D HelloTriangleApplication::chooseSwapExtent(const VkSurfaceCapabilitie
     }
 }
 
-SwapChainSupportDetails HelloTriangleApplication::querySwapChainSupport(VkPhysicalDevice device) {
+SwapChainSupportDetails VulkanRifeRendererApp::querySwapChainSupport(VkPhysicalDevice device) {
     SwapChainSupportDetails details;
 
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
@@ -544,7 +544,7 @@ SwapChainSupportDetails HelloTriangleApplication::querySwapChainSupport(VkPhysic
     return details;
 }
 
-bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
+bool VulkanRifeRendererApp::isDeviceSuitable(VkPhysicalDevice device) {
     QueueFamilyIndices indices = findQueueFamilies(device);
 
     bool extensionsSupported = checkDeviceExtensionSupport(device);
@@ -558,7 +558,7 @@ bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
-bool HelloTriangleApplication::checkDeviceExtensionSupport(VkPhysicalDevice device) {
+bool VulkanRifeRendererApp::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     uint32_t extensionCount;
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
 
@@ -574,7 +574,7 @@ bool HelloTriangleApplication::checkDeviceExtensionSupport(VkPhysicalDevice devi
     return requiredExtensions.empty();
 }
 
-QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice device) {
+QueueFamilyIndices VulkanRifeRendererApp::findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
 
     uint32_t queueFamilyCount = 0;
@@ -623,6 +623,6 @@ QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice 
     return indices;
 }
 
-VkFormat HelloTriangleApplication::findDepthFormat() {
+VkFormat VulkanRifeRendererApp::findDepthFormat() {
     return VK_FORMAT_D32_SFLOAT;
 }

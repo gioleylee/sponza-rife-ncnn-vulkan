@@ -75,7 +75,7 @@
 #include "AppTypes.h"
 #include "validation_layers.h"
 
-class HelloTriangleApplication {
+class VulkanRifeRendererApp {
 public:
     void run();
 

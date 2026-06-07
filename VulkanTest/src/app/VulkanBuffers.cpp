@@ -1,5 +1,5 @@
 // Owns vertex/index/uniform buffers, buffer copies, and memory type lookup.
-#include "HelloTriangleApplication.h"
+#include "VulkanRifeRendererApp.h"
 
 #include <vulkan/vulkan.h>
 
@@ -7,7 +7,7 @@
 #include <cstring>
 #include <stdexcept>
 
-void HelloTriangleApplication::createVertexBuffer() {
+void VulkanRifeRendererApp::createVertexBuffer() {
     VkDeviceSize bufferSize = sizeof(modelVertices[0]) * modelVertices.size();
 
     VkBuffer stagingBuffer;
@@ -29,7 +29,7 @@ void HelloTriangleApplication::createVertexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void HelloTriangleApplication::createIndexBuffer() {
+void VulkanRifeRendererApp::createIndexBuffer() {
     VkDeviceSize bufferSize = sizeof(modelIndices[0]) * modelIndices.size();
 
     VkBuffer stagingBuffer;
@@ -54,7 +54,7 @@ void HelloTriangleApplication::createIndexBuffer() {
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-void HelloTriangleApplication::createUniformBuffers() {
+void VulkanRifeRendererApp::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
     uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -77,7 +77,7 @@ void HelloTriangleApplication::createUniformBuffers() {
     }
 }
 
-void HelloTriangleApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+void VulkanRifeRendererApp::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -113,7 +113,7 @@ void HelloTriangleApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+uint32_t VulkanRifeRendererApp::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     uint32_t memoryTypeIndex = 0;
     if (tryFindMemoryType(typeFilter, properties, memoryTypeIndex)) {
         return memoryTypeIndex;
@@ -122,7 +122,7 @@ uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryP
     throw std::runtime_error("failed to find suitable memory type!");
 }
 
-bool HelloTriangleApplication::tryFindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t& memoryTypeIndex) {
+bool VulkanRifeRendererApp::tryFindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t& memoryTypeIndex) {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 

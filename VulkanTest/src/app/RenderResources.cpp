@@ -1,12 +1,12 @@
 // Owns framebuffer, depth, G-buffer attachment, and image-view resources.
-#include "HelloTriangleApplication.h"
+#include "VulkanRifeRendererApp.h"
 
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
 #include <stdexcept>
 
-void HelloTriangleApplication::createFramebuffers() {
+void VulkanRifeRendererApp::createFramebuffers() {
     offscreenFramebuffers.resize(offscreenFrames.size());
 
     for (size_t i = 0; i < offscreenFrames.size(); i++) {
@@ -33,7 +33,7 @@ void HelloTriangleApplication::createFramebuffers() {
     }
 }
 
-void HelloTriangleApplication::createDepthResources() {
+void VulkanRifeRendererApp::createDepthResources() {
     VkFormat depthFormat = findDepthFormat();
 
     depthImages.resize(offscreenFrames.size());
@@ -56,7 +56,7 @@ void HelloTriangleApplication::createDepthResources() {
     }
 }
 
-void HelloTriangleApplication::createGBufferAttachments() {
+void VulkanRifeRendererApp::createGBufferAttachments() {
     VkFormat normalFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     gNormalImages.resize(offscreenFrames.size());
     gNormalImageMemories.resize(offscreenFrames.size());
@@ -118,7 +118,7 @@ void HelloTriangleApplication::createGBufferAttachments() {
     }
 }
 
-VkImageView HelloTriangleApplication::createImageView(VkImage image, VkFormat format, uint32_t mipLevels) {
+VkImageView VulkanRifeRendererApp::createImageView(VkImage image, VkFormat format, uint32_t mipLevels) {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;

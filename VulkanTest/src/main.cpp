@@ -55,16 +55,16 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#include "HelloTriangleApplication.h"
+#include "VulkanRifeRendererApp.h"
 
-void HelloTriangleApplication::run() {
+void VulkanRifeRendererApp::run() {
     initWindow();
     initVulkan();
     mainLoop();
     cleanup();
 }
 
-void HelloTriangleApplication::initVulkan() {
+void VulkanRifeRendererApp::initVulkan() {
     createInstance();
     setupDebugMessenger();
     createSurface();
@@ -103,7 +103,7 @@ void HelloTriangleApplication::initVulkan() {
 #endif
 }
 
-void HelloTriangleApplication::mainLoop() {
+void VulkanRifeRendererApp::mainLoop() {
     auto lastTime = std::chrono::high_resolution_clock::now();
 
     while (!glfwWindowShouldClose(window)) {
@@ -122,7 +122,7 @@ void HelloTriangleApplication::mainLoop() {
     vkDeviceWaitIdle(device);
 }
 
-void HelloTriangleApplication::cleanup() {
+void VulkanRifeRendererApp::cleanup() {
 #if HAS_NCNN
     waitForAsyncRifeInference();
     shutdownNcnn();
@@ -191,7 +191,7 @@ void HelloTriangleApplication::cleanup() {
 }
 
 #if HAS_NCNN
-int HelloTriangleApplication::findNcnnDeviceIndexForRenderer() const {
+int VulkanRifeRendererApp::findNcnnDeviceIndexForRenderer() const {
     VkPhysicalDeviceProperties rendererProperties{};
     vkGetPhysicalDeviceProperties(physicalDevice, &rendererProperties);
 
@@ -224,7 +224,7 @@ int HelloTriangleApplication::findNcnnDeviceIndexForRenderer() const {
     return gpuCount > 0 ? 0 : -1;
 }
 
-void HelloTriangleApplication::applyNcnnVulkanOptions() {
+void VulkanRifeRendererApp::applyNcnnVulkanOptions() {
     const int gpuCount = ncnn::get_gpu_count();
     const bool hasSelectedGpu =
         ncnnRendererDeviceIndex >= 0 && ncnnRendererDeviceIndex < gpuCount;
@@ -240,7 +240,7 @@ void HelloTriangleApplication::applyNcnnVulkanOptions() {
     net.opt.use_cooperative_matrix = true;
 }
 
-void HelloTriangleApplication::initNcnn() {
+void VulkanRifeRendererApp::initNcnn() {
     if (ncnnInitialized) {
         return;
     }
@@ -261,7 +261,7 @@ void HelloTriangleApplication::initNcnn() {
               << ", vulkan_compute=" << (net.opt.use_vulkan_compute ? "on" : "off") << ")" << std::endl;
 }
 
-void HelloTriangleApplication::shutdownNcnn() {
+void VulkanRifeRendererApp::shutdownNcnn() {
     if (!ncnnInitialized) {
         return;
     }
@@ -276,7 +276,7 @@ void HelloTriangleApplication::shutdownNcnn() {
     rifeModelAttachedToRenderer = false;
 }
 
-bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const std::string& binPath) {
+bool VulkanRifeRendererApp::loadNcnnModel(const std::string& paramPath, const std::string& binPath) {
     if (!ncnnInitialized) {
         initNcnn();
     }
@@ -295,7 +295,7 @@ bool HelloTriangleApplication::loadNcnnModel(const std::string& paramPath, const
     return true;
 }
 
-void HelloTriangleApplication::tryLoadDefaultNcnnModel() {
+void VulkanRifeRendererApp::tryLoadDefaultNcnnModel() {
     const std::string optimizedParam = "assets/models/rife-v4/flownet-opt.param";
     const std::string optimizedBin = "assets/models/rife-v4/flownet-opt.bin";
     const std::string defaultParam = "assets/models/rife-v4/flownet.param";
@@ -331,7 +331,7 @@ void HelloTriangleApplication::tryLoadDefaultNcnnModel() {
 
 #endif
 
-void HelloTriangleApplication::createCommandPool() {
+void VulkanRifeRendererApp::createCommandPool() {
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 
     VkCommandPoolCreateInfo poolInfo{};
@@ -344,7 +344,7 @@ void HelloTriangleApplication::createCommandPool() {
     }
 }
 
-void HelloTriangleApplication::createDescriptorPool() {
+void VulkanRifeRendererApp::createDescriptorPool() {
     uint32_t materialCount =
         static_cast<uint32_t>(std::max<size_t>(1, materials.size()));
 
@@ -371,7 +371,7 @@ void HelloTriangleApplication::createDescriptorPool() {
     } // pool creation
 }
 
-void HelloTriangleApplication::createDescriptorSets() {
+void VulkanRifeRendererApp::createDescriptorSets() {
     uint32_t materialCount = static_cast<uint32_t>(std::max<size_t>(1, materials.size()));
     uint32_t setsPerFrame = materialCount + 1;
     uint32_t totalSets = MAX_FRAMES_IN_FLIGHT * setsPerFrame; // per-frame materials plus cube
@@ -471,7 +471,7 @@ void HelloTriangleApplication::createDescriptorSets() {
     }
 }
 
-void HelloTriangleApplication::createLightingDescriptorPool() {
+void VulkanRifeRendererApp::createLightingDescriptorPool() {
     uint32_t imageCount = static_cast<uint32_t>(offscreenFrames.size());
 
     VkDescriptorPoolSize inputAttachmentPoolSize{};
@@ -489,7 +489,7 @@ void HelloTriangleApplication::createLightingDescriptorPool() {
     }
 }
 
-void HelloTriangleApplication::createLightingDescriptorSets() {
+void VulkanRifeRendererApp::createLightingDescriptorSets() {
     uint32_t imageCount = static_cast<uint32_t>(offscreenFrames.size());
 
     std::vector<VkDescriptorSetLayout> layouts(imageCount, lightingDescriptorSetLayout);
@@ -549,7 +549,7 @@ void HelloTriangleApplication::createLightingDescriptorSets() {
     }
 }
 
-void HelloTriangleApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+void VulkanRifeRendererApp::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                    VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -576,7 +576,7 @@ void HelloTriangleApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlag
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
 }
 
-bool HelloTriangleApplication::createExportableFrameBuffer(VkDeviceSize size,
+bool VulkanRifeRendererApp::createExportableFrameBuffer(VkDeviceSize size,
                                  VkBuffer& buffer,
                                  VkDeviceMemory& bufferMemory,
                                  HANDLE& externalHandle) {
@@ -652,7 +652,7 @@ bool HelloTriangleApplication::createExportableFrameBuffer(VkDeviceSize size,
     return true;
 }
 
-void HelloTriangleApplication::createFrameProcessingResources() {
+void VulkanRifeRendererApp::createFrameProcessingResources() {
     cleanupFrameProcessingResources();
 
     const VkDeviceSize frameSize =
@@ -731,7 +731,7 @@ void HelloTriangleApplication::createFrameProcessingResources() {
     lastFramePairCaptureProcessMs = 0.0;
 }
 
-void HelloTriangleApplication::cleanupFrameProcessingResources() {
+void VulkanRifeRendererApp::cleanupFrameProcessingResources() {
 #if HAS_NCNN
     waitForAsyncRifeInference();
 #endif
@@ -818,7 +818,7 @@ void HelloTriangleApplication::cleanupFrameProcessingResources() {
     lastFramePairCaptureProcessMs = 0.0;
 }
 
-uint32_t HelloTriangleApplication::findAvailableOffscreenFrameSlot() const {
+uint32_t VulkanRifeRendererApp::findAvailableOffscreenFrameSlot() const {
     for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
 #if HAS_NCNN
         if (rifeInferenceInFlight &&
@@ -855,7 +855,7 @@ uint32_t HelloTriangleApplication::findAvailableOffscreenFrameSlot() const {
     return UINT32_MAX;
 }
 
-void HelloTriangleApplication::copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer,
+void VulkanRifeRendererApp::copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer,
                                                               uint32_t imageIndex,
                                                               uint32_t offscreenSlot) {
     auto& source = offscreenFrames[offscreenSlot];
@@ -912,7 +912,7 @@ void HelloTriangleApplication::copyOffscreenImageToSwapchain(VkCommandBuffer com
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
 }
 
-void HelloTriangleApplication::copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
+void VulkanRifeRendererApp::copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
                                                          uint32_t imageIndex,
                                                          VkBuffer sourceBuffer,
                                                          VkAccessFlags sourceAccessMask,
@@ -1020,7 +1020,7 @@ void HelloTriangleApplication::copyRifeBufferToSwapchain(VkCommandBuffer command
     );
 }
 
-void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+void VulkanRifeRendererApp::displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
     if (!hasRifeDisplayFrame ||
         rifePendingInterpolatedOutputIndex >= rifeOutputBuffers.size() ||
         rifeOutputBuffers.empty()) {
@@ -1054,7 +1054,7 @@ void HelloTriangleApplication::displayRifeFrameOnSwapchain(VkCommandBuffer comma
     rifeHeldSourceDisplayIndex = UINT32_MAX;
 }
 
-void HelloTriangleApplication::displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex) {
+void VulkanRifeRendererApp::displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex) {
     if (sourceIndex >= offscreenFrames.size()) {
         return;
     }
@@ -1067,7 +1067,7 @@ void HelloTriangleApplication::displayRifeSourceBufferOnSwapchain(VkCommandBuffe
     copyOffscreenImageToSwapchain(commandBuffer, imageIndex, sourceIndex);
 }
 
-void HelloTriangleApplication::displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+void VulkanRifeRendererApp::displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
     if (rifePendingSourceDisplayIndex >= offscreenFrames.size()) {
         rifePendingSourceDisplayIndex = UINT32_MAX;
         return;
@@ -1080,7 +1080,7 @@ void HelloTriangleApplication::displayCapturedRifeSourceOnSwapchain(VkCommandBuf
     rifeRenderAheadPending = false;
 }
 
-void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
+void VulkanRifeRendererApp::processCapturedFrameForSlot(uint32_t frameSlot) {
     if (frameSlot >= pendingCaptureSlotByFrame.size()) {
         return;
     }
@@ -1114,7 +1114,7 @@ void HelloTriangleApplication::processCapturedFrameForSlot(uint32_t frameSlot) {
 
 }
 
-void HelloTriangleApplication::createCommandBuffers() {
+void VulkanRifeRendererApp::createCommandBuffers() {
     commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkCommandBufferAllocateInfo allocInfo{};
@@ -1128,7 +1128,7 @@ void HelloTriangleApplication::createCommandBuffers() {
     }
 }
 
-uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBuffer,
+uint32_t VulkanRifeRendererApp::recordCommandBuffer(VkCommandBuffer commandBuffer,
                                                        uint32_t imageIndex,
                                                        PresentationCommandMode mode) {
     VkCommandBufferBeginInfo beginInfo{};
@@ -1309,7 +1309,7 @@ uint32_t HelloTriangleApplication::recordCommandBuffer(VkCommandBuffer commandBu
     return offscreenSlot;
 }
 
-void HelloTriangleApplication::createSyncObjects() {
+void VulkanRifeRendererApp::createSyncObjects() {
     imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
     renderFinishedSemaphores.resize(swapChainImages.size());
     inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1336,7 +1336,7 @@ void HelloTriangleApplication::createSyncObjects() {
 }
 
 #if HAS_NCNN
-void HelloTriangleApplication::waitForAsyncRifeInference() {
+void VulkanRifeRendererApp::waitForAsyncRifeInference() {
     if (asyncRifeInference.valid()) {
         asyncRifeInference.wait();
         AsyncRifeResult result = asyncRifeInference.get();
@@ -1357,7 +1357,7 @@ void HelloTriangleApplication::waitForAsyncRifeInference() {
     asyncRifeOutputIndex = UINT32_MAX;
 }
 
-void HelloTriangleApplication::pollAsyncRifeInference() {
+void VulkanRifeRendererApp::pollAsyncRifeInference() {
     if (!asyncRifeInference.valid()) {
         rifeInferenceInFlight = false;
         return;
@@ -1414,7 +1414,7 @@ void HelloTriangleApplication::pollAsyncRifeInference() {
     rifePendingSourceDisplayIndex = result.currentSourceIndex;
 }
 
-bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
+bool VulkanRifeRendererApp::submitAsyncRifeInferenceIfReady() {
     if (!rifeRealtimeInterpolationEnabled ||
         !rifeModelAttachedToRenderer ||
         rifeInferenceInFlight ||
@@ -1534,7 +1534,7 @@ bool HelloTriangleApplication::submitAsyncRifeInferenceIfReady() {
 
 #endif
 
-void HelloTriangleApplication::updateUniformBuffer(uint32_t currentImage) {
+void VulkanRifeRendererApp::updateUniformBuffer(uint32_t currentImage) {
     glm::mat4 view = glm::lookAt(
         cameraPos,
         cameraPos + cameraFront,
@@ -1567,7 +1567,7 @@ void HelloTriangleApplication::updateUniformBuffer(uint32_t currentImage) {
     memcpy(cubeUniformBuffersMapped[currentImage], &cubeUbo, sizeof(cubeUbo));
 }
 
-void HelloTriangleApplication::drawFrame() {
+void VulkanRifeRendererApp::drawFrame() {
     const auto prepareFrameSlot = [this](uint32_t frameSlot) {
         vkWaitForFences(device, 1, &inFlightFences[frameSlot], VK_TRUE, UINT64_MAX);
         for (auto& output : rifeOutputBuffers) {
@@ -1697,7 +1697,7 @@ void HelloTriangleApplication::drawFrame() {
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void HelloTriangleApplication::loadModel(const std::string& path) {
+void VulkanRifeRendererApp::loadModel(const std::string& path) {
     Assimp::Importer importer;
 
     const aiScene* scene = importer.ReadFile(
@@ -1798,7 +1798,7 @@ void HelloTriangleApplication::loadModel(const std::string& path) {
 
 }
 
-void HelloTriangleApplication::appendRotatingCubeGeometry() {
+void VulkanRifeRendererApp::appendRotatingCubeGeometry() {
     rotatingCubeIndexOffset = static_cast<uint32_t>(modelIndices.size());
 
     const float h = 0.5f;
@@ -1842,7 +1842,7 @@ void HelloTriangleApplication::appendRotatingCubeGeometry() {
     rotatingCubeIndexCount = static_cast<uint32_t>(modelIndices.size()) - rotatingCubeIndexOffset;
 }
 
-void HelloTriangleApplication::createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
+void VulkanRifeRendererApp::createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
     VkImageTiling tiling, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties,
     VkImage& image, VkDeviceMemory& imageMemory,
@@ -1883,7 +1883,7 @@ void HelloTriangleApplication::createImage(uint32_t width, uint32_t height, uint
     vkBindImageMemory(device, image, imageMemory, 0);
 }
 
-VkCommandBuffer HelloTriangleApplication::beginSingleTimeCommands() {
+VkCommandBuffer VulkanRifeRendererApp::beginSingleTimeCommands() {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -1901,7 +1901,7 @@ VkCommandBuffer HelloTriangleApplication::beginSingleTimeCommands() {
     return commandBuffer;
 }
 
-void HelloTriangleApplication::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+void VulkanRifeRendererApp::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
     vkEndCommandBuffer(commandBuffer);
 
     VkSubmitInfo submitInfo{};
@@ -1918,7 +1918,7 @@ void HelloTriangleApplication::endSingleTimeCommands(VkCommandBuffer commandBuff
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void HelloTriangleApplication::transitionImageLayout(VkImage image, VkFormat format,
+void VulkanRifeRendererApp::transitionImageLayout(VkImage image, VkFormat format,
     VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels) {
     VkCommandBuffer cmd = beginSingleTimeCommands();
 
@@ -1986,7 +1986,7 @@ void HelloTriangleApplication::transitionImageLayout(VkImage image, VkFormat for
     endSingleTimeCommands(cmd);
 }
 
-void HelloTriangleApplication::copyBufferToImage(VkBuffer buffer, VkImage image,
+void VulkanRifeRendererApp::copyBufferToImage(VkBuffer buffer, VkImage image,
     uint32_t width, uint32_t height) {
     VkCommandBuffer cmd = beginSingleTimeCommands();
 
@@ -2008,7 +2008,7 @@ void HelloTriangleApplication::copyBufferToImage(VkBuffer buffer, VkImage image,
     endSingleTimeCommands(cmd);
 }
 
-void HelloTriangleApplication::loadMaterialTextures() {
+void VulkanRifeRendererApp::loadMaterialTextures() {
     const std::string fallback = "";
 
     for (auto& mat : materials) {
@@ -2095,7 +2095,7 @@ void HelloTriangleApplication::loadMaterialTextures() {
     }
 }
 
-void HelloTriangleApplication::generateMipmaps(VkImage image, VkFormat imageFormat,
+void VulkanRifeRendererApp::generateMipmaps(VkImage image, VkFormat imageFormat,
     int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
 
     VkCommandBuffer cmd = beginSingleTimeCommands();
@@ -2180,7 +2180,7 @@ void HelloTriangleApplication::generateMipmaps(VkImage image, VkFormat imageForm
     endSingleTimeCommands(cmd);
 }
 
-void HelloTriangleApplication::createFallbackTexture() {
+void VulkanRifeRendererApp::createFallbackTexture() {
     const uint32_t textureWidth = 64;
     const uint32_t textureHeight = 64;
     const auto rgba = [](uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
@@ -2306,7 +2306,7 @@ int main() {
     std::cout << "[NCNN] disabled" << std::endl;
 #endif
 
-    HelloTriangleApplication app;
+    VulkanRifeRendererApp app;
 
     try {
         app.run();

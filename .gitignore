@@ -33,3 +33,5 @@ out/
 
 # 3D model .obj files
 !**/assets/**/*.obj
+
+AGENTS.md

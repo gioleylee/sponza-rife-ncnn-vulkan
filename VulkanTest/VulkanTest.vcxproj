@@ -175,7 +175,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\app\AppTypes.h" />
-    <ClInclude Include="include\app\HelloTriangleApplication.h" />
+    <ClInclude Include="include\app\VulkanRifeRendererApp.h" />
     <ClInclude Include="include\app\RifeRunner.h" />
     <ClInclude Include="include\platform\WindowInput.h" />
     <ClInclude Include="include\platform\validation_layers.h" />

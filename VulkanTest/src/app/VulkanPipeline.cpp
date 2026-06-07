@@ -1,5 +1,5 @@
 // Owns render pass, descriptor set layouts, shader loading, and graphics pipelines.
-#include "HelloTriangleApplication.h"
+#include "VulkanRifeRendererApp.h"
 
 #include <vulkan/vulkan.h>
 
@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-void HelloTriangleApplication::createRenderPass() {
+void VulkanRifeRendererApp::createRenderPass() {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapChainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -131,7 +131,7 @@ void HelloTriangleApplication::createRenderPass() {
     }
 }
 
-void HelloTriangleApplication::createDescriptorSetLayout() {
+void VulkanRifeRendererApp::createDescriptorSetLayout() {
     VkDescriptorSetLayoutBinding uboLayoutBinding{}; // UBO
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorCount = 1;
@@ -160,7 +160,7 @@ void HelloTriangleApplication::createDescriptorSetLayout() {
     } // creation
 }
 
-void HelloTriangleApplication::createLightingDescriptorSetLayout() {
+void VulkanRifeRendererApp::createLightingDescriptorSetLayout() {
     VkDescriptorSetLayoutBinding normalInputBinding{};
     normalInputBinding.binding = 0;
     normalInputBinding.descriptorCount = 1;
@@ -196,7 +196,7 @@ void HelloTriangleApplication::createLightingDescriptorSetLayout() {
     }
 }
 
-void HelloTriangleApplication::createGraphicsPipeline() {
+void VulkanRifeRendererApp::createGraphicsPipeline() {
     auto vertShaderCode = readFile("shaders/vert.spv");
     auto fragShaderCode = readFile("shaders/frag.spv");
 
@@ -323,7 +323,7 @@ void HelloTriangleApplication::createGraphicsPipeline() {
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-void HelloTriangleApplication::createLightingPipeline() {
+void VulkanRifeRendererApp::createLightingPipeline() {
     auto vertShaderCode = readFile("shaders/deferred.vert.spv");
     auto fragShaderCode = readFile("shaders/deferred.frag.spv");
 
@@ -444,7 +444,7 @@ void HelloTriangleApplication::createLightingPipeline() {
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) {
+VkShaderModule VulkanRifeRendererApp::createShaderModule(const std::vector<char>& code) {
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
@@ -458,7 +458,7 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
     return shaderModule;
 }
 
-std::vector<char> HelloTriangleApplication::readFile(const std::string& filename) {
+std::vector<char> VulkanRifeRendererApp::readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {

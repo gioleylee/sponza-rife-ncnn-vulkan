@@ -151,8 +151,10 @@
     <ClCompile Include="src\rife\RifeRunner.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\app\RenderResources.cpp" />
+    <ClCompile Include="src\app\TextureLoader.cpp" />
     <ClCompile Include="src\app\VulkanBuffers.cpp" />
     <ClCompile Include="src\app\VulkanDevice.cpp" />
+    <ClCompile Include="src\app\VulkanHelpers.cpp" />
     <ClCompile Include="src\app\VulkanPipeline.cpp" />
     <ClCompile Include="src\platform\WindowInput.cpp" />
     <ClCompile Include="src\platform\validation_layers.cpp" />
@@ -175,6 +177,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\app\AppTypes.h" />
+    <ClInclude Include="include\app\TextureLoader.h" />
+    <ClInclude Include="include\app\VulkanHelpers.h" />
     <ClInclude Include="include\app\VulkanRifeRendererApp.h" />
     <ClInclude Include="include\app\RifeRunner.h" />
     <ClInclude Include="include\platform\WindowInput.h" />

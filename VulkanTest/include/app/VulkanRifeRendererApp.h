@@ -318,8 +318,7 @@ private:
 
     void createLightingDescriptorSets();
 
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                       VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+#include "VulkanHelpers.h"
 
 #if defined(_WIN32)
     bool createExportableFrameBuffer(VkDeviceSize size,
@@ -327,12 +326,6 @@ private:
                                      VkDeviceMemory& bufferMemory,
                                      HANDLE& externalHandle);
 #endif
-
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-
-    bool tryFindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t& memoryTypeIndex);
 
     void createFrameProcessingResources();
 
@@ -386,30 +379,7 @@ private:
 
     void appendRotatingCubeGeometry();
 
-    void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
-        VkImageTiling tiling, VkImageUsageFlags usage,
-        VkMemoryPropertyFlags properties,
-        VkImage& image, VkDeviceMemory& imageMemory,
-        VkImageCreateFlags flags = 0);
-
-    VkImageView createImageView(VkImage image, VkFormat format, uint32_t mipLevels);
-
-    VkCommandBuffer beginSingleTimeCommands();
-
-    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
-
-    void transitionImageLayout(VkImage image, VkFormat format,
-        VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
-
-    void copyBufferToImage(VkBuffer buffer, VkImage image,
-        uint32_t width, uint32_t height);
-
-    void loadMaterialTextures();
-
-    void generateMipmaps(VkImage image, VkFormat imageFormat,
-        int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
-
-    void createFallbackTexture();
+#include "TextureLoader.h"
 
     VkShaderModule createShaderModule(const std::vector<char>& code);
 

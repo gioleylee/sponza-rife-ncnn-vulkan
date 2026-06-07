@@ -1,11 +1,10 @@
-// Owns vertex/index/uniform buffers, buffer copies, and memory type lookup.
+// Owns vertex/index/uniform buffer resources.
 #include "VulkanRifeRendererApp.h"
 
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
 #include <cstring>
-#include <stdexcept>
 
 void VulkanRifeRendererApp::createVertexBuffer() {
     VkDeviceSize bufferSize = sizeof(modelVertices[0]) * modelVertices.size();
@@ -77,61 +76,3 @@ void VulkanRifeRendererApp::createUniformBuffers() {
     }
 }
 
-void VulkanRifeRendererApp::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = commandPool;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    VkBufferCopy copyRegion{};
-    copyRegion.size = size;
-    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-    vkEndCommandBuffer(commandBuffer);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    {
-        std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
-        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(graphicsQueue);
-    }
-
-    vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-}
-
-uint32_t VulkanRifeRendererApp::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-    uint32_t memoryTypeIndex = 0;
-    if (tryFindMemoryType(typeFilter, properties, memoryTypeIndex)) {
-        return memoryTypeIndex;
-    }
-
-    throw std::runtime_error("failed to find suitable memory type!");
-}
-
-bool VulkanRifeRendererApp::tryFindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, uint32_t& memoryTypeIndex) {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            memoryTypeIndex = i;
-            return true;
-        }
-    }
-
-    return false;
-}

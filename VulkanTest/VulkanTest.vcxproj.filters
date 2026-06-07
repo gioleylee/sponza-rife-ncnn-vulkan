@@ -42,10 +42,16 @@
     <ClCompile Include="src\app\RenderResources.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
+    <ClCompile Include="src\app\TextureLoader.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
     <ClCompile Include="src\app\VulkanBuffers.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
     <ClCompile Include="src\app\VulkanDevice.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\VulkanHelpers.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
     <ClCompile Include="src\app\VulkanPipeline.cpp">
@@ -87,6 +93,12 @@
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\app\VulkanRifeRendererApp.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\VulkanHelpers.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\TextureLoader.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\platform\WindowInput.h">

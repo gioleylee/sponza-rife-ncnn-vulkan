@@ -139,6 +139,27 @@ struct AsyncRifeResult {
     uint32_t currentSourceIndex = UINT32_MAX;
 };
 
+struct RifePresentationState {
+    bool hasRifeGpuFramePair = false;
+    uint32_t currentRifeGpuFrameIndex = UINT32_MAX;
+    uint32_t previousRifeGpuFrameIndex = UINT32_MAX;
+    bool hasRifeDisplayFrame = false;
+    uint64_t nextRifeOutputSequence = 1;
+    uint32_t rifePendingInterpolatedOutputIndex = UINT32_MAX;
+    uint32_t rifePendingSourceDisplayIndex = UINT32_MAX;
+    uint32_t rifeHeldSourceDisplayIndex = UINT32_MAX;
+    uint32_t rifeLastPresentedSourceIndex = UINT32_MAX;
+    bool rifeRenderAheadPending = false;
+    bool rifeInferenceInFlight = false;
+    uint32_t asyncRifePrevFrameIndex = UINT32_MAX;
+    uint32_t asyncRifeCurrFrameIndex = UINT32_MAX;
+    uint32_t asyncRifeOutputIndex = UINT32_MAX;
+    int rifeInferenceScaleDivisor = RIFE_INITIAL_INFERENCE_SCALE_DIVISOR;
+    uint64_t rifeCompletedInferenceCount = 0;
+    bool rifeRealtimeInterpolationEnabled = false;
+    bool rifeInferenceRequestWaitingForFramePair = false;
+};
+
 enum class PresentationCommandMode {
     RenderFrame,
     DisplayInterpolatedFrame,

@@ -6,8 +6,6 @@ void createSwapChain();
 
 void createImageViews();
 
-void createFramebuffers();
-
 VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 
 VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);

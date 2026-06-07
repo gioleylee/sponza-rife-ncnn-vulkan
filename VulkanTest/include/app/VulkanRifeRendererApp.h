@@ -13,27 +13,15 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 
-#include <iostream>
-#include <fstream>
-#include <stdexcept>
-#include <algorithm>
-#include <chrono>
-#include <vector>
-#include <cstring>
-#include <cstdlib>
-#include <cstdint>
-#include <limits>
 #include <array>
-#include <optional>
-#include <set>
-#include <filesystem>
-#include <memory>
-#include <string>
+#include <cstdint>
 #include <future>
 #include <mutex>
+#include <string>
+#include <vector>
+
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -163,29 +151,14 @@ private:
     std::vector<OffscreenFrame> offscreenFrames;
     std::vector<RifeOutputBuffer> rifeOutputBuffers;
     std::array<uint32_t, MAX_FRAMES_IN_FLIGHT> pendingCaptureSlotByFrame = { UINT32_MAX, UINT32_MAX };
-    bool hasRifeGpuFramePair = false;
-    uint32_t currentRifeGpuFrameIndex = UINT32_MAX;
-    uint32_t previousRifeGpuFrameIndex = UINT32_MAX;
+    RifePresentationState rifePresentationState;
     uint64_t capturedFrameCount = 0;
     double previousFrameCaptureProcessMs = 0.0;
     double lastFrameCaptureProcessMs = 0.0;
     double lastFramePairCaptureProcessMs = 0.0;
     VkDeviceSize rifeDisplayBufferSize = 0;
-    bool hasRifeDisplayFrame = false;
-    uint64_t nextRifeOutputSequence = 1;
-    uint32_t rifePendingInterpolatedOutputIndex = UINT32_MAX;
-    uint32_t rifePendingSourceDisplayIndex = UINT32_MAX;
-    uint32_t rifeHeldSourceDisplayIndex = UINT32_MAX;
-    uint32_t rifeLastPresentedSourceIndex = UINT32_MAX;
-    bool rifeRenderAheadPending = false;
 #if HAS_NCNN
     std::future<AsyncRifeResult> asyncRifeInference;
-    bool rifeInferenceInFlight = false;
-    uint32_t asyncRifePrevFrameIndex = UINT32_MAX;
-    uint32_t asyncRifeCurrFrameIndex = UINT32_MAX;
-    uint32_t asyncRifeOutputIndex = UINT32_MAX;
-    int rifeInferenceScaleDivisor = RIFE_INITIAL_INFERENCE_SCALE_DIVISOR;
-    uint64_t rifeCompletedInferenceCount = 0;
 #endif
 
     bool framebufferResized = false;
@@ -237,8 +210,6 @@ private:
     bool ncnnModelLoaded = false;
     bool rifeModelAttachedToRenderer = false;
     bool rKeyPressed = false;
-    bool rifeRealtimeInterpolationEnabled = false;
-    bool rifeInferenceRequestWaitingForFramePair = false;
 #endif
 
     void initWindow();
@@ -250,20 +221,6 @@ private:
     void mainLoop();
 
     void cleanup();
-
-#if HAS_NCNN
-    int findNcnnDeviceIndexForRenderer() const;
-
-    void initNcnn();
-
-    void shutdownNcnn();
-
-    bool loadNcnnModel(const std::string& paramPath, const std::string& binPath);
-
-    void tryLoadDefaultNcnnModel();
-
-    void applyNcnnVulkanOptions();
-#endif
 
 #include "Swapchain.h"
 
@@ -279,17 +236,7 @@ private:
 
     VkFormat findDepthFormat();
 
-    void createGBufferAttachments();
-
-    void createRenderPass();
-
 #include "DescriptorResources.h"
-
-    void createGraphicsPipeline();
-
-    void createLightingPipeline();
-
-    void createDepthResources();
 
     void createCommandPool();
 
@@ -302,32 +249,7 @@ private:
 
 #include "VulkanHelpers.h"
 
-#if defined(_WIN32)
-    bool createExportableFrameBuffer(VkDeviceSize size,
-                                     VkBuffer& buffer,
-                                     VkDeviceMemory& bufferMemory,
-                                     HANDLE& externalHandle);
-#endif
-
-    void createFrameProcessingResources();
-
-    void cleanupFrameProcessingResources();
-
-    uint32_t findAvailableOffscreenFrameSlot() const;
-
     void copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t offscreenSlot);
-
-    void copyRifeBufferToSwapchain(VkCommandBuffer commandBuffer,
-                                   uint32_t imageIndex,
-                                   VkBuffer sourceBuffer,
-                                   VkAccessFlags sourceAccessMask,
-                                   VkPipelineStageFlags sourceStageMask);
-
-    void displayRifeFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
-
-    void displayRifeSourceBufferOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t sourceIndex);
-
-    void displayCapturedRifeSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     void processCapturedFrameForSlot(uint32_t frameSlot);
 
@@ -339,15 +261,23 @@ private:
 
     void createSyncObjects();
 
-#if HAS_NCNN
-    void waitForAsyncRifeInference();
-
-    void pollAsyncRifeInference();
-
-    bool submitAsyncRifeInferenceIfReady();
-#endif
+#include "RifeIntegration.h"
 
     void updateUniformBuffer(uint32_t currentImage);
+
+    bool acquireFrame(uint32_t& imageIndex);
+
+    void updateFrameState(uint32_t frameSlot);
+
+    uint32_t recordMainRenderCommands(uint32_t frameSlot,
+                                      uint32_t imageIndex,
+                                      PresentationCommandMode mode);
+
+    void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedRifeSlot);
+
+    void handlePresentation(uint32_t imageIndex);
+
+    void advanceFrameIndex();
 
     void drawFrame();
 
@@ -361,13 +291,11 @@ private:
 
 #include "TextureLoader.h"
 
-    VkShaderModule createShaderModule(const std::vector<char>& code);
-
     bool isDeviceSuitable(VkPhysicalDevice device);
 
     bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
-    static std::vector<char> readFile(const std::string& filename);
+#include "RenderResources.h"
 };

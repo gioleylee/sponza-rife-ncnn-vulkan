@@ -5,7 +5,10 @@
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <iostream>
 
 void VulkanRifeRendererApp::initWindow() {
     glfwInit();
@@ -97,16 +100,10 @@ void VulkanRifeRendererApp::processInput(float deltaTime) {
 #if HAS_NCNN
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (!rKeyPressed) {
-            rifeRealtimeInterpolationEnabled = !rifeRealtimeInterpolationEnabled;
+            const bool enableRifeInterpolation = !rifePresentationState.rifeRealtimeInterpolationEnabled;
             waitForAsyncRifeInference();
-            rifeInferenceRequestWaitingForFramePair = false;
-            hasRifeGpuFramePair = false;
-            hasRifeDisplayFrame = false;
-            rifePendingInterpolatedOutputIndex = UINT32_MAX;
-            rifePendingSourceDisplayIndex = UINT32_MAX;
-            rifeHeldSourceDisplayIndex = UINT32_MAX;
-            rifeLastPresentedSourceIndex = UINT32_MAX;
-            rifeRenderAheadPending = false;
+            rifePresentationState = RifePresentationState{};
+            rifePresentationState.rifeRealtimeInterpolationEnabled = enableRifeInterpolation;
             for (auto& output : rifeOutputBuffers) {
                 output.ready = false;
                 output.inUseByInference = false;
@@ -114,18 +111,13 @@ void VulkanRifeRendererApp::processInput(float deltaTime) {
                 output.graphicsFrameSlot = UINT32_MAX;
                 output.sequence = 0;
             }
-            nextRifeOutputSequence = 1;
-            rifeInferenceScaleDivisor = RIFE_INITIAL_INFERENCE_SCALE_DIVISOR;
-            rifeCompletedInferenceCount = 0;
             capturedFrameCount = 0;
-            currentRifeGpuFrameIndex = UINT32_MAX;
-            previousRifeGpuFrameIndex = UINT32_MAX;
             previousFrameCaptureProcessMs = 0.0;
             lastFrameCaptureProcessMs = 0.0;
             lastFramePairCaptureProcessMs = 0.0;
             pendingCaptureSlotByFrame.fill(UINT32_MAX);
             std::cout << "[RIFE] realtime interpolation "
-                      << (rifeRealtimeInterpolationEnabled ? "enabled" : "disabled")
+                      << (rifePresentationState.rifeRealtimeInterpolationEnabled ? "enabled" : "disabled")
                       << std::endl;
             rKeyPressed = true;
         }

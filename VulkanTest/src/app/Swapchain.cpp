@@ -101,10 +101,7 @@ void VulkanRifeRendererApp::recreateSwapChain() {
 }
 
 void VulkanRifeRendererApp::cleanupSwapChain() {
-    for (auto framebuffer : offscreenFramebuffers) {
-        vkDestroyFramebuffer(device, framebuffer, nullptr);
-    }
-    offscreenFramebuffers.clear();
+    cleanupFramebuffers();
 
     if (lightingDescriptorPool) {
         vkDestroyDescriptorPool(device, lightingDescriptorPool, nullptr);
@@ -112,41 +109,8 @@ void VulkanRifeRendererApp::cleanupSwapChain() {
         lightingDescriptorSets.clear();
     }
 
-    for (size_t i = 0; i < gNormalImageViews.size(); ++i) {
-        vkDestroyImageView(device, gNormalImageViews[i], nullptr);
-        vkDestroyImage(device, gNormalImages[i], nullptr);
-        vkFreeMemory(device, gNormalImageMemories[i], nullptr);
-    }
-    gNormalImageViews.clear();
-    gNormalImages.clear();
-    gNormalImageMemories.clear();
-
-    for (size_t i = 0; i < gAlbedoImageViews.size(); ++i) {
-        vkDestroyImageView(device, gAlbedoImageViews[i], nullptr);
-        vkDestroyImage(device, gAlbedoImages[i], nullptr);
-        vkFreeMemory(device, gAlbedoImageMemories[i], nullptr);
-    }
-    gAlbedoImageViews.clear();
-    gAlbedoImages.clear();
-    gAlbedoImageMemories.clear();
-
-    for (size_t i = 0; i < gPositionImageViews.size(); ++i) {
-        vkDestroyImageView(device, gPositionImageViews[i], nullptr);
-        vkDestroyImage(device, gPositionImages[i], nullptr);
-        vkFreeMemory(device, gPositionImageMemories[i], nullptr);
-    }
-    gPositionImageViews.clear();
-    gPositionImages.clear();
-    gPositionImageMemories.clear();
-
-    for (size_t i = 0; i < depthImageViews.size(); ++i) {
-        vkDestroyImageView(device, depthImageViews[i], nullptr);
-        vkDestroyImage(device, depthImages[i], nullptr);
-        vkFreeMemory(device, depthImageMemories[i], nullptr);
-    }
-    depthImageViews.clear();
-    depthImages.clear();
-    depthImageMemories.clear();
+    cleanupGBufferAttachments();
+    cleanupDepthResources();
 
     cleanupFrameProcessingResources();
 
@@ -178,33 +142,6 @@ void VulkanRifeRendererApp::createImageViews() {
 
         if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create image views!");
-        }
-    }
-}
-
-void VulkanRifeRendererApp::createFramebuffers() {
-    offscreenFramebuffers.resize(offscreenFrames.size());
-
-    for (size_t i = 0; i < offscreenFrames.size(); i++) {
-        VkImageView attachments[] = {
-            offscreenFrames[i].imageView,
-            gNormalImageViews[i],
-            gAlbedoImageViews[i],
-            gPositionImageViews[i],
-            depthImageViews[i]
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = 5;
-        framebufferInfo.pAttachments = attachments;
-        framebufferInfo.width = swapChainExtent.width;
-        framebufferInfo.height = swapChainExtent.height;
-        framebufferInfo.layers = 1;
-
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &offscreenFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create offscreen framebuffer!");
         }
     }
 }

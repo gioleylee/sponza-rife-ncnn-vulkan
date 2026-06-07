@@ -48,6 +48,9 @@
     <ClCompile Include="src\app\RenderResources.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
+    <ClCompile Include="src\app\RifeIntegration.cpp">
+      <Filter>Source Files\App</Filter>
+    </ClCompile>
     <ClCompile Include="src\app\Swapchain.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
@@ -61,9 +64,6 @@
       <Filter>Source Files\App</Filter>
     </ClCompile>
     <ClCompile Include="src\app\VulkanHelpers.cpp">
-      <Filter>Source Files\App</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\VulkanPipeline.cpp">
       <Filter>Source Files\App</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\WindowInput.cpp">
@@ -111,6 +111,12 @@
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\app\ModelLoader.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\RenderResources.h">
+      <Filter>Header Files\App</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\RifeIntegration.h">
       <Filter>Header Files\App</Filter>
     </ClInclude>
     <ClInclude Include="include\app\DescriptorResources.h">

@@ -169,6 +169,8 @@ struct OffscreenFrame {
     VkBuffer gpuBuffer = VK_NULL_HANDLE;
     VkDeviceMemory gpuMemory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
+    uint64_t debugFrameId = UINT64_MAX;
+    bool debugPresented = false;
 };
 
 struct NcnnOutputBuffer {
@@ -180,6 +182,8 @@ struct NcnnOutputBuffer {
     bool inUseByGraphics = false;
     uint32_t graphicsFrameSlot = UINT32_MAX;
     uint64_t sequence = 0;
+    uint64_t debugPreviousFrameId = UINT64_MAX;
+    uint64_t debugCurrentFrameId = UINT64_MAX;
 };
 
 struct AsyncNcnnResult {
@@ -191,6 +195,29 @@ struct AsyncNcnnResult {
     int inferenceH = 0;
     uint32_t outputIndex = UINT32_MAX;
     uint32_t currentSourceIndex = UINT32_MAX;
+    uint32_t previousSourceIndex = UINT32_MAX;
+    uint64_t previousFrameId = UINT64_MAX;
+    uint64_t currentFrameId = UINT64_MAX;
+    uint32_t interpolationTargetIndex = UINT32_MAX;
+};
+
+enum class InterpolationTargetState {
+    Pending,
+    Running,
+    Ready,
+    Presented,
+    Dropped
+};
+
+struct FrameInterpolationTarget {
+    uint64_t previousFrameId = UINT64_MAX;
+    uint64_t currentFrameId = UINT64_MAX;
+    uint32_t previousSourceIndex = UINT32_MAX;
+    uint32_t currentSourceIndex = UINT32_MAX;
+    uint32_t outputIndex = UINT32_MAX;
+    InterpolationTargetState state = InterpolationTargetState::Pending;
+    bool waitingForFutureSource = false;
+    std::string reason;
 };
 
 struct NcnnPresentationState {

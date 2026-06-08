@@ -352,6 +352,8 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
         output.inUseByGraphics = false;
         output.graphicsFrameSlot = UINT32_MAX;
         output.sequence = 0;
+        output.debugPreviousFrameId = UINT64_MAX;
+        output.debugCurrentFrameId = UINT64_MAX;
     }
 
     pendingCaptureSlotByFrame.fill(UINT32_MAX);
@@ -360,6 +362,7 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
     previousFrameCaptureProcessMs = 0.0;
     lastFrameCaptureProcessMs = 0.0;
     lastFramePairCaptureProcessMs = 0.0;
+    resetFrameInterpolationDebugState();
 }
 
 void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
@@ -384,9 +387,12 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
         output.inUseByGraphics = false;
         output.graphicsFrameSlot = UINT32_MAX;
         output.sequence = 0;
+        output.debugPreviousFrameId = UINT64_MAX;
+        output.debugCurrentFrameId = UINT64_MAX;
     }
 
     ncnnOutputBuffers.clear();
+    ncnnInterpolationTargets.clear();
     ncnnDisplayBufferSize = 0;
     resetNcnnDisplayState(ncnnPresentationState);
 #if HAS_NCNN
@@ -425,6 +431,8 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
         }
 
         frame.size = 0;
+        frame.debugFrameId = UINT64_MAX;
+        frame.debugPresented = false;
     }
 
     offscreenFrames.clear();
@@ -434,6 +442,7 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
     previousFrameCaptureProcessMs = 0.0;
     lastFrameCaptureProcessMs = 0.0;
     lastFramePairCaptureProcessMs = 0.0;
+    resetFrameInterpolationDebugState();
 }
 
 uint32_t VulkanNcnnRenderer::findAvailableOffscreenFrameSlot() const {
@@ -454,6 +463,9 @@ uint32_t VulkanNcnnRenderer::findAvailableOffscreenFrameSlot() const {
             continue;
         }
         if (slot == ncnnPresentationState.ncnnLastPresentedSourceIndex) {
+            continue;
+        }
+        if (offscreenFrames[slot].debugFrameId != UINT64_MAX && !offscreenFrames[slot].debugPresented) {
             continue;
         }
 
@@ -598,6 +610,15 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
         return;
     }
 
+    std::cout << "[FrameInterp] Present interpolated frame "
+              << selectedOutput.debugPreviousFrameId << ".5"
+              << " output[" << ncnnPresentationState.ncnnPendingInterpolatedOutputIndex << "]"
+              << " using real " << selectedOutput.debugPreviousFrameId
+              << " -> " << selectedOutput.debugCurrentFrameId
+              << " swapchain[" << imageIndex << "]" << std::endl;
+
+    const uint64_t presentedPreviousFrameId = selectedOutput.debugPreviousFrameId;
+    const uint32_t targetIndex = findInterpolationTargetIndex(presentedPreviousFrameId);
     copyNcnnBufferToSwapchain(
         commandBuffer,
         imageIndex,
@@ -609,6 +630,11 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
     selectedOutput.ready = false;
     selectedOutput.inUseByGraphics = true;
     selectedOutput.graphicsFrameSlot = currentFrame;
+    markDebugInterpolatedFramePresented(presentedPreviousFrameId);
+    if (targetIndex < ncnnInterpolationTargets.size()) {
+        auto& target = ncnnInterpolationTargets[targetIndex];
+        target.state = InterpolationTargetState::Presented;
+    }
 
     ncnnPresentationState.hasNcnnDisplayFrame = false;
     ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
@@ -625,6 +651,17 @@ void VulkanNcnnRenderer::displayNcnnSourceBufferOnSwapchain(VkCommandBuffer comm
         return;
     }
 
+    std::cout << "[FrameInterp] Present real frame ";
+    if (source.debugFrameId == UINT64_MAX) {
+        std::cout << "unknown";
+    }
+    else {
+        std::cout << source.debugFrameId;
+    }
+    std::cout << " from offscreen[" << sourceIndex << "]"
+              << " swapchain[" << imageIndex << "]" << std::endl;
+
+    markDebugRealFramePresented(sourceIndex);
     copyOffscreenImageToSwapchain(commandBuffer, imageIndex, sourceIndex);
 }
 
@@ -649,7 +686,10 @@ void VulkanNcnnRenderer::waitForAsyncNcnnInference() {
         if (result.outputIndex < ncnnOutputBuffers.size()) {
             ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
             ncnnOutputBuffers[result.outputIndex].ready = false;
+            ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = UINT64_MAX;
+            ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = UINT64_MAX;
         }
+        dropInterpolationTarget(result.interpolationTargetIndex, "async wait abandoned result");
     }
 
     resetNcnnAsyncState(ncnnPresentationState);
@@ -676,7 +716,10 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
         if (result.outputIndex < ncnnOutputBuffers.size()) {
             ncnnOutputBuffers[result.outputIndex].ready = false;
             ncnnOutputBuffers[result.outputIndex].sequence = 0;
+            ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = UINT64_MAX;
+            ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = UINT64_MAX;
         }
+        dropInterpolationTarget(result.interpolationTargetIndex, "realtime interpolation disabled");
         resetNcnnFramePairState(ncnnPresentationState);
         resetNcnnPendingPresentationState(ncnnPresentationState);
         return;
@@ -699,6 +742,15 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
 
         ncnnOutputBuffers[result.outputIndex].ready = true;
         ncnnOutputBuffers[result.outputIndex].sequence = ncnnPresentationState.nextNcnnOutputSequence++;
+        ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = result.previousFrameId;
+        ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = result.currentFrameId;
+        if (result.interpolationTargetIndex < ncnnInterpolationTargets.size()) {
+            auto& target = ncnnInterpolationTargets[result.interpolationTargetIndex];
+            target.state = InterpolationTargetState::Ready;
+            target.outputIndex = result.outputIndex;
+            target.previousSourceIndex = result.previousSourceIndex;
+            target.currentSourceIndex = result.currentSourceIndex;
+        }
         ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = result.outputIndex;
         ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
         ncnnPresentationState.hasNcnnDisplayFrame = true;
@@ -717,18 +769,40 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
     // Do not leave the scheduler holding N forever if interpolation fails.
     // Advance to N+1 on the next presentation tick and resume render-ahead.
     ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
+    dropInterpolationTarget(result.interpolationTargetIndex, "NCNN inference failed");
 }
 
 bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
-    if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled ||
-        !ncnnModelAttachedToRenderer ||
-        ncnnPresentationState.ncnnInferenceInFlight ||
-        !ncnnPresentationState.hasNcnnGpuFramePair ||
-        capturedFrameCount < 2 ||
-        ncnnPresentationState.previousNcnnGpuFrameIndex >= offscreenFrames.size() ||
-        ncnnPresentationState.currentNcnnGpuFrameIndex >= offscreenFrames.size() ||
-        ncnnOutputBuffers.empty() ||
-        ncnnDisplayBufferSize == 0) {
+    releaseObsoleteNcnnOutputBuffers();
+    logNcnnOutputBufferStates("before-submit");
+
+    if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled) {
+        return false;
+    }
+    if (!ncnnModelAttachedToRenderer) {
+        return false;
+    }
+    if (ncnnPresentationState.ncnnInferenceInFlight) {
+        return false;
+    }
+    uint32_t targetIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
+        const auto& target = ncnnInterpolationTargets[i];
+        if (target.state == InterpolationTargetState::Pending &&
+            !target.waitingForFutureSource &&
+            target.previousSourceIndex < offscreenFrames.size() &&
+            target.currentSourceIndex < offscreenFrames.size()) {
+            targetIndex = i;
+            break;
+        }
+    }
+
+    if (targetIndex == UINT32_MAX) {
+        if (!ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair) {
+        }
+        return false;
+    }
+    if (ncnnOutputBuffers.empty() || ncnnDisplayBufferSize == 0) {
         return false;
     }
 
@@ -746,11 +820,50 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
     }
 
     if (outputIndex == UINT32_MAX) {
+        uint32_t reusableFutureTargetIndex = UINT32_MAX;
+        uint64_t reusableFutureFrameId = 0;
+        for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
+            const auto& candidate = ncnnInterpolationTargets[i];
+            if (candidate.state != InterpolationTargetState::Ready ||
+                candidate.outputIndex >= ncnnOutputBuffers.size() ||
+                candidate.previousFrameId <= ncnnInterpolationTargets[targetIndex].previousFrameId) {
+                continue;
+            }
+
+            const auto& output = ncnnOutputBuffers[candidate.outputIndex];
+            if (output.inUseByGraphics || output.inUseByInference) {
+                continue;
+            }
+
+            if (candidate.previousFrameId >= reusableFutureFrameId) {
+                reusableFutureFrameId = candidate.previousFrameId;
+                reusableFutureTargetIndex = i;
+            }
+        }
+
+        if (reusableFutureTargetIndex < ncnnInterpolationTargets.size()) {
+            outputIndex = ncnnInterpolationTargets[reusableFutureTargetIndex].outputIndex;
+            dropInterpolationTarget(reusableFutureTargetIndex, "dropped to free NCNN output buffer for earlier target");
+        }
+    }
+
+    if (outputIndex == UINT32_MAX) {
+        logNcnnOutputBufferStates("no-free-buffer");
         return false;
     }
 
-    const uint32_t prevIndex = ncnnPresentationState.previousNcnnGpuFrameIndex;
-    const uint32_t currIndex = ncnnPresentationState.currentNcnnGpuFrameIndex;
+    auto& target = ncnnInterpolationTargets[targetIndex];
+    const uint32_t prevIndex = target.previousSourceIndex;
+    const uint32_t currIndex = target.currentSourceIndex;
+    const uint64_t prevFrameId = target.previousFrameId;
+    const uint64_t currFrameId = target.currentFrameId;
+    if (prevIndex >= offscreenFrames.size() ||
+        currIndex >= offscreenFrames.size() ||
+        offscreenFrames[prevIndex].debugFrameId != prevFrameId ||
+        offscreenFrames[currIndex].debugFrameId != currFrameId) {
+        dropInterpolationTarget(targetIndex, "source offscreen slot was overwritten before inference");
+        return false;
+    }
     const VkImage prevImage = offscreenFrames[prevIndex].image;
     const VkImageView prevImageView = offscreenFrames[prevIndex].ncnnInputImageView;
     const VkDeviceMemory prevMemory = offscreenFrames[prevIndex].imageMemory;
@@ -781,9 +894,13 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
     ncnnOutputBuffers[outputIndex].inUseByInference = true;
     ncnnOutputBuffers[outputIndex].ready = false;
     ncnnOutputBuffers[outputIndex].sequence = 0;
+    ncnnOutputBuffers[outputIndex].debugPreviousFrameId = prevFrameId;
+    ncnnOutputBuffers[outputIndex].debugCurrentFrameId = currFrameId;
     ncnnPresentationState.hasNcnnGpuFramePair = false;
     ncnnPresentationState.ncnnHeldSourceDisplayIndex = prevIndex;
     ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
+    target.state = InterpolationTargetState::Running;
+    target.outputIndex = outputIndex;
 
     asyncNcnnInference = std::async(std::launch::async, [this,
                                                          prevImage,
@@ -801,7 +918,11 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
                                                          inferenceW,
                                                          inferenceH,
                                                          currIndex,
-                                                         outputIndex]() {
+                                                         outputIndex,
+                                                         prevIndex,
+                                                         prevFrameId,
+                                                         currFrameId,
+                                                         targetIndex]() {
         AsyncNcnnResult result{};
         result.inputW = inputW;
         result.inputH = inputH;
@@ -809,6 +930,10 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         result.inferenceH = inferenceH;
         result.outputIndex = outputIndex;
         result.currentSourceIndex = currIndex;
+        result.previousSourceIndex = prevIndex;
+        result.previousFrameId = prevFrameId;
+        result.currentFrameId = currFrameId;
+        result.interpolationTargetIndex = targetIndex;
 
         const auto start = std::chrono::high_resolution_clock::now();
 

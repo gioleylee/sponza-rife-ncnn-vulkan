@@ -167,9 +167,13 @@ private:
 
     std::vector<OffscreenFrame> offscreenFrames;
     std::vector<NcnnOutputBuffer> ncnnOutputBuffers;
+    std::vector<FrameInterpolationTarget> ncnnInterpolationTargets;
     std::array<uint32_t, MAX_FRAMES_IN_FLIGHT> pendingCaptureSlotByFrame = { UINT32_MAX, UINT32_MAX };
     NcnnPresentationState ncnnPresentationState;
     uint64_t capturedFrameCount = 0;
+    uint64_t nextDebugFrameId = 0;
+    std::string debugLastPresentedFrameLabel = "none";
+    int64_t debugLastPresentedTimelineStep = -1;
     double previousFrameCaptureProcessMs = 0.0;
     double lastFrameCaptureProcessMs = 0.0;
     double lastFramePairCaptureProcessMs = 0.0;
@@ -289,6 +293,56 @@ private:
 #include "VulkanHelpers.h"
 
     void copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t offscreenSlot);
+
+    void resetFrameInterpolationDebugState();
+
+    const char* presentationCommandModeName(PresentationCommandMode mode) const;
+
+    std::string describeOffscreenSlotBlocker(uint32_t slot) const;
+
+    void logOffscreenFrameMap() const;
+
+    std::string debugRealFrameLabel(uint64_t frameId) const;
+
+    std::string debugInterpolatedFrameLabel(uint64_t previousFrameId) const;
+
+    bool isDebugRealFramePresented(uint64_t frameId) const;
+
+    std::string buildDebugPresentQueue(PresentationCommandMode mode, bool canRenderSourceFrame) const;
+
+    uint32_t findEarliestUnpresentedRealFrameSlot() const;
+
+    uint32_t findReadyInterpolatedOutputForPreviousFrame(uint64_t previousFrameId) const;
+
+    std::string debugTimelineStepLabel(int64_t timelineStep) const;
+
+    const char* interpolationTargetStateName(InterpolationTargetState state) const;
+
+    uint32_t findInterpolationTargetIndex(uint64_t previousFrameId) const;
+
+    uint32_t findInterpolationTargetIndexForOutput(uint32_t outputIndex) const;
+
+    uint32_t findOffscreenSlotForDebugFrame(uint64_t frameId) const;
+
+    void createInterpolationTargetIfNeeded(uint32_t previousSourceIndex, uint32_t currentSourceIndex);
+
+    uint32_t createWaitingInterpolationTargetIfNeeded(uint64_t previousFrameId, uint32_t previousSourceIndex);
+
+    void updateWaitingInterpolationTargets();
+
+    void dropInterpolationTarget(uint32_t targetIndex, const std::string& reason);
+
+    void releaseObsoleteNcnnOutputBuffers();
+
+    void logNcnnOutputBufferStates(const char* context) const;
+
+    void logDebugPresentState(PresentationCommandMode mode, bool canRenderSourceFrame, const std::string& actualChosen) const;
+
+    void logDebugPresentQueue(const char* phase, PresentationCommandMode mode, bool canRenderSourceFrame) const;
+
+    void markDebugRealFramePresented(uint32_t sourceIndex);
+
+    void markDebugInterpolatedFramePresented(uint64_t previousFrameId);
 
     void processCapturedFrameForSlot(uint32_t frameSlot);
 

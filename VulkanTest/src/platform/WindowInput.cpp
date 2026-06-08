@@ -131,6 +131,7 @@ void VulkanNcnnRenderer::processInput(float deltaTime) {
             previousFrameCaptureProcessMs = 0.0;
             lastFrameCaptureProcessMs = 0.0;
             lastFramePairCaptureProcessMs = 0.0;
+            resetFrameInterpolationDebugState();
             std::cout << "[NCNN] realtime interpolation "
                       << (ncnnPresentationState.ncnnRealtimeInterpolationEnabled ? "enabled" : "disabled")
                       << std::endl;

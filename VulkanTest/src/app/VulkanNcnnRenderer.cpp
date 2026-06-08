@@ -22,6 +22,8 @@
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 #include "VulkanNcnnRenderer.h"
 
@@ -320,6 +322,497 @@ void VulkanNcnnRenderer::copyOffscreenImageToSwapchain(VkCommandBuffer commandBu
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
 }
 
+void VulkanNcnnRenderer::resetFrameInterpolationDebugState() {
+    nextDebugFrameId = 0;
+    debugLastPresentedFrameLabel = "none";
+    debugLastPresentedTimelineStep = -1;
+
+    for (auto& frame : offscreenFrames) {
+        frame.debugFrameId = UINT64_MAX;
+        frame.debugPresented = false;
+    }
+
+    for (auto& output : ncnnOutputBuffers) {
+        output.debugPreviousFrameId = UINT64_MAX;
+        output.debugCurrentFrameId = UINT64_MAX;
+    }
+    ncnnInterpolationTargets.clear();
+}
+
+const char* VulkanNcnnRenderer::presentationCommandModeName(PresentationCommandMode mode) const {
+    switch (mode) {
+    case PresentationCommandMode::RenderFrame:
+        return "RenderFrame";
+    case PresentationCommandMode::DisplayInterpolatedFrame:
+        return "DisplayInterpolatedFrame";
+    case PresentationCommandMode::DisplayCapturedSourceFrame:
+        return "DisplayCapturedSourceFrame";
+    case PresentationCommandMode::DisplayHeldSourceFrame:
+        return "DisplayHeldSourceFrame";
+    default:
+        return "Unknown";
+    }
+}
+
+std::string VulkanNcnnRenderer::describeOffscreenSlotBlocker(uint32_t slot) const {
+#if HAS_NCNN
+    if (ncnnPresentationState.ncnnInferenceInFlight &&
+        (slot == ncnnPresentationState.asyncNcnnPrevFrameIndex ||
+         slot == ncnnPresentationState.asyncNcnnCurrFrameIndex)) {
+        return "async NCNN inference input";
+    }
+#endif
+    if (slot == ncnnPresentationState.currentNcnnGpuFrameIndex) {
+        return "current NCNN source frame";
+    }
+    if (slot == ncnnPresentationState.ncnnPendingSourceDisplayIndex) {
+        return "pending real-frame presentation";
+    }
+    if (slot == ncnnPresentationState.ncnnHeldSourceDisplayIndex) {
+        return "held source frame";
+    }
+    if (slot == ncnnPresentationState.ncnnLastPresentedSourceIndex) {
+        return "last presented source frame";
+    }
+    if (offscreenFrames[slot].debugFrameId != UINT64_MAX && !offscreenFrames[slot].debugPresented) {
+        return "pending chronological real-frame presentation";
+    }
+
+    for (uint32_t frameSlot = 0; frameSlot < pendingCaptureSlotByFrame.size(); ++frameSlot) {
+        if (pendingCaptureSlotByFrame[frameSlot] == slot) {
+            return "pending GPU capture on frameSlot " + std::to_string(frameSlot);
+        }
+    }
+
+    return "available";
+}
+
+void VulkanNcnnRenderer::logOffscreenFrameMap() const {
+}
+
+std::string VulkanNcnnRenderer::debugRealFrameLabel(uint64_t frameId) const {
+    return frameId == UINT64_MAX ? "unknown" : std::to_string(frameId);
+}
+
+std::string VulkanNcnnRenderer::debugInterpolatedFrameLabel(uint64_t previousFrameId) const {
+    return previousFrameId == UINT64_MAX ? "unknown.5" : std::to_string(previousFrameId) + ".5";
+}
+
+std::string VulkanNcnnRenderer::debugTimelineStepLabel(int64_t timelineStep) const {
+    if (timelineStep < 0) {
+        return "none";
+    }
+
+    const uint64_t wholeFrame = static_cast<uint64_t>(timelineStep / 2);
+    if ((timelineStep % 2) == 0) {
+        return debugRealFrameLabel(wholeFrame);
+    }
+
+    return debugInterpolatedFrameLabel(wholeFrame);
+}
+
+bool VulkanNcnnRenderer::isDebugRealFramePresented(uint64_t frameId) const {
+    for (const auto& frame : offscreenFrames) {
+        if (frame.debugFrameId == frameId) {
+            return frame.debugPresented;
+        }
+    }
+
+    return false;
+}
+
+uint32_t VulkanNcnnRenderer::findEarliestUnpresentedRealFrameSlot() const {
+    uint32_t selectedSlot = UINT32_MAX;
+    uint64_t selectedFrameId = UINT64_MAX;
+
+    for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
+        const auto& frame = offscreenFrames[slot];
+        if (frame.debugFrameId == UINT64_MAX || frame.debugPresented || frame.image == VK_NULL_HANDLE || frame.size == 0) {
+            continue;
+        }
+
+        const int64_t timelineStep = static_cast<int64_t>(frame.debugFrameId * 2);
+        if (timelineStep <= debugLastPresentedTimelineStep) {
+            continue;
+        }
+
+        if (frame.debugFrameId < selectedFrameId) {
+            selectedFrameId = frame.debugFrameId;
+            selectedSlot = slot;
+        }
+    }
+
+    return selectedSlot;
+}
+
+uint32_t VulkanNcnnRenderer::findReadyInterpolatedOutputForPreviousFrame(uint64_t previousFrameId) const {
+    const uint32_t targetIndex = findInterpolationTargetIndex(previousFrameId);
+    if (targetIndex >= ncnnInterpolationTargets.size()) {
+        return UINT32_MAX;
+    }
+
+    const auto& target = ncnnInterpolationTargets[targetIndex];
+    if (target.state != InterpolationTargetState::Ready ||
+        target.outputIndex >= ncnnOutputBuffers.size()) {
+        return UINT32_MAX;
+    }
+
+    const auto& output = ncnnOutputBuffers[target.outputIndex];
+    if (output.ready &&
+        !output.inUseByGraphics &&
+        output.gpuBuffer != VK_NULL_HANDLE &&
+        output.size != 0) {
+        return target.outputIndex;
+    }
+
+    return UINT32_MAX;
+}
+
+std::string VulkanNcnnRenderer::buildDebugPresentQueue(PresentationCommandMode mode, bool canRenderSourceFrame) const {
+    std::vector<uint64_t> realFrameIds;
+    for (const auto& frame : offscreenFrames) {
+        if (frame.debugFrameId != UINT64_MAX && !frame.debugPresented) {
+            realFrameIds.push_back(frame.debugFrameId);
+        }
+    }
+    if (mode == PresentationCommandMode::RenderFrame && canRenderSourceFrame) {
+        realFrameIds.push_back(nextDebugFrameId);
+    }
+
+    std::sort(realFrameIds.begin(), realFrameIds.end());
+    realFrameIds.erase(std::unique(realFrameIds.begin(), realFrameIds.end()), realFrameIds.end());
+
+    std::vector<uint64_t> interpolatedPreviousFrameIds;
+    for (const auto& target : ncnnInterpolationTargets) {
+        if (target.previousFrameId == UINT64_MAX ||
+            target.state == InterpolationTargetState::Presented ||
+            target.state == InterpolationTargetState::Dropped) {
+            continue;
+        }
+        if (static_cast<int64_t>(target.previousFrameId * 2 + 1) <= debugLastPresentedTimelineStep) {
+            continue;
+        }
+        interpolatedPreviousFrameIds.push_back(target.previousFrameId);
+    }
+
+    std::sort(interpolatedPreviousFrameIds.begin(), interpolatedPreviousFrameIds.end());
+    interpolatedPreviousFrameIds.erase(
+        std::unique(interpolatedPreviousFrameIds.begin(), interpolatedPreviousFrameIds.end()),
+        interpolatedPreviousFrameIds.end());
+
+    std::vector<std::pair<uint64_t, std::string>> orderedEntries;
+    for (uint64_t frameId : realFrameIds) {
+        orderedEntries.emplace_back(frameId * 2, debugRealFrameLabel(frameId));
+    }
+
+    for (uint64_t frameId : interpolatedPreviousFrameIds) {
+        orderedEntries.emplace_back(frameId * 2 + 1, debugInterpolatedFrameLabel(frameId));
+    }
+
+    std::sort(
+        orderedEntries.begin(),
+        orderedEntries.end(),
+        [](const auto& lhs, const auto& rhs) {
+            return lhs.first < rhs.first;
+        });
+
+    std::string queue = "[";
+    for (size_t i = 0; i < orderedEntries.size(); ++i) {
+        if (i > 0) {
+            queue += ", ";
+        }
+        queue += orderedEntries[i].second;
+    }
+    queue += "]";
+    return queue;
+}
+
+const char* VulkanNcnnRenderer::interpolationTargetStateName(InterpolationTargetState state) const {
+    switch (state) {
+    case InterpolationTargetState::Pending:
+        return "pending";
+    case InterpolationTargetState::Running:
+        return "running";
+    case InterpolationTargetState::Ready:
+        return "ready";
+    case InterpolationTargetState::Presented:
+        return "presented";
+    case InterpolationTargetState::Dropped:
+        return "dropped";
+    default:
+        return "unknown";
+    }
+}
+
+uint32_t VulkanNcnnRenderer::findInterpolationTargetIndex(uint64_t previousFrameId) const {
+    for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
+        if (ncnnInterpolationTargets[i].previousFrameId == previousFrameId) {
+            return i;
+        }
+    }
+
+    return UINT32_MAX;
+}
+
+uint32_t VulkanNcnnRenderer::findInterpolationTargetIndexForOutput(uint32_t outputIndex) const {
+    for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
+        if (ncnnInterpolationTargets[i].outputIndex == outputIndex &&
+            ncnnInterpolationTargets[i].state != InterpolationTargetState::Presented &&
+            ncnnInterpolationTargets[i].state != InterpolationTargetState::Dropped) {
+            return i;
+        }
+    }
+
+    return UINT32_MAX;
+}
+
+uint32_t VulkanNcnnRenderer::findOffscreenSlotForDebugFrame(uint64_t frameId) const {
+    for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
+        if (offscreenFrames[slot].debugFrameId == frameId) {
+            return slot;
+        }
+    }
+
+    return UINT32_MAX;
+}
+
+void VulkanNcnnRenderer::createInterpolationTargetIfNeeded(uint32_t previousSourceIndex, uint32_t currentSourceIndex) {
+    if (previousSourceIndex >= offscreenFrames.size() || currentSourceIndex >= offscreenFrames.size()) {
+        return;
+    }
+
+    const uint64_t previousFrameId = offscreenFrames[previousSourceIndex].debugFrameId;
+    const uint64_t currentFrameId = offscreenFrames[currentSourceIndex].debugFrameId;
+    if (previousFrameId == UINT64_MAX || currentFrameId == UINT64_MAX) {
+        return;
+    }
+
+    if (currentFrameId != previousFrameId + 1) {
+        return;
+    }
+
+    if (findInterpolationTargetIndex(previousFrameId) != UINT32_MAX) {
+        return;
+    }
+
+    FrameInterpolationTarget target{};
+    target.previousFrameId = previousFrameId;
+    target.currentFrameId = currentFrameId;
+    target.previousSourceIndex = previousSourceIndex;
+    target.currentSourceIndex = currentSourceIndex;
+    target.state = InterpolationTargetState::Pending;
+    target.waitingForFutureSource = false;
+    ncnnInterpolationTargets.push_back(target);
+
+}
+
+uint32_t VulkanNcnnRenderer::createWaitingInterpolationTargetIfNeeded(uint64_t previousFrameId, uint32_t previousSourceIndex) {
+    const uint32_t existingTargetIndex = findInterpolationTargetIndex(previousFrameId);
+    if (existingTargetIndex != UINT32_MAX) {
+        return existingTargetIndex;
+    }
+    if (previousSourceIndex >= offscreenFrames.size() ||
+        offscreenFrames[previousSourceIndex].debugFrameId != previousFrameId) {
+        return UINT32_MAX;
+    }
+
+    FrameInterpolationTarget target{};
+    target.previousFrameId = previousFrameId;
+    target.currentFrameId = previousFrameId + 1;
+    target.previousSourceIndex = previousSourceIndex;
+    target.currentSourceIndex = UINT32_MAX;
+    target.state = InterpolationTargetState::Pending;
+    target.waitingForFutureSource = true;
+    target.reason = "waiting for future real source frame";
+    ncnnInterpolationTargets.push_back(target);
+
+    const uint32_t targetIndex = static_cast<uint32_t>(ncnnInterpolationTargets.size() - 1);
+    return targetIndex;
+}
+
+void VulkanNcnnRenderer::updateWaitingInterpolationTargets() {
+    for (auto& target : ncnnInterpolationTargets) {
+        if (!target.waitingForFutureSource ||
+            target.state != InterpolationTargetState::Pending ||
+            target.previousFrameId == UINT64_MAX ||
+            target.currentFrameId == UINT64_MAX) {
+            continue;
+        }
+
+        const uint32_t previousSlot = findOffscreenSlotForDebugFrame(target.previousFrameId);
+        const uint32_t currentSlot = findOffscreenSlotForDebugFrame(target.currentFrameId);
+        if (previousSlot >= offscreenFrames.size() || currentSlot >= offscreenFrames.size()) {
+            continue;
+        }
+
+        target.previousSourceIndex = previousSlot;
+        target.currentSourceIndex = currentSlot;
+        target.waitingForFutureSource = false;
+        target.reason.clear();
+    }
+}
+
+void VulkanNcnnRenderer::dropInterpolationTarget(uint32_t targetIndex, const std::string& reason) {
+    if (targetIndex >= ncnnInterpolationTargets.size()) {
+        return;
+    }
+
+    auto& target = ncnnInterpolationTargets[targetIndex];
+    if (target.state == InterpolationTargetState::Presented ||
+        target.state == InterpolationTargetState::Dropped) {
+        return;
+    }
+
+    if (target.outputIndex < ncnnOutputBuffers.size() &&
+        !ncnnOutputBuffers[target.outputIndex].inUseByGraphics &&
+        !ncnnOutputBuffers[target.outputIndex].inUseByInference) {
+        auto& output = ncnnOutputBuffers[target.outputIndex];
+        output.ready = false;
+        output.debugPreviousFrameId = UINT64_MAX;
+        output.debugCurrentFrameId = UINT64_MAX;
+        output.sequence = 0;
+        target.outputIndex = UINT32_MAX;
+    }
+
+    target.state = InterpolationTargetState::Dropped;
+    target.reason = reason;
+}
+
+void VulkanNcnnRenderer::releaseObsoleteNcnnOutputBuffers() {
+    for (uint32_t targetIndex = 0; targetIndex < ncnnInterpolationTargets.size(); ++targetIndex) {
+        auto& target = ncnnInterpolationTargets[targetIndex];
+        if (target.outputIndex >= ncnnOutputBuffers.size()) {
+            continue;
+        }
+        if (target.state != InterpolationTargetState::Ready &&
+            target.state != InterpolationTargetState::Dropped &&
+            target.state != InterpolationTargetState::Presented) {
+            continue;
+        }
+        if (target.state == InterpolationTargetState::Ready &&
+            static_cast<int64_t>(target.previousFrameId * 2 + 1) > debugLastPresentedTimelineStep) {
+            continue;
+        }
+
+        auto& output = ncnnOutputBuffers[target.outputIndex];
+        if (output.inUseByGraphics || output.inUseByInference) {
+            continue;
+        }
+
+        output.ready = false;
+        output.debugPreviousFrameId = UINT64_MAX;
+        output.debugCurrentFrameId = UINT64_MAX;
+        output.sequence = 0;
+        target.outputIndex = UINT32_MAX;
+    }
+}
+
+void VulkanNcnnRenderer::logNcnnOutputBufferStates(const char* context) const {
+}
+
+void VulkanNcnnRenderer::logDebugPresentState(PresentationCommandMode mode, bool canRenderSourceFrame, const std::string& actualChosen) const {
+    const int64_t expectedTimelineStep = debugLastPresentedTimelineStep + 1;
+    const std::string expectedNext = debugTimelineStepLabel(expectedTimelineStep);
+    const bool expectedIsReal = (expectedTimelineStep % 2) == 0;
+    const char* expectedType = expectedIsReal ? "real" : "interp";
+    const char* chosenType = "none";
+    bool ready = false;
+    std::string reason;
+
+    if (expectedIsReal) {
+        const uint64_t expectedFrameId = static_cast<uint64_t>(expectedTimelineStep / 2);
+        const uint32_t pendingRealSlot = findEarliestUnpresentedRealFrameSlot();
+        ready =
+            (pendingRealSlot < offscreenFrames.size() &&
+             offscreenFrames[pendingRealSlot].debugFrameId == expectedFrameId) ||
+            (mode == PresentationCommandMode::RenderFrame &&
+             canRenderSourceFrame &&
+             nextDebugFrameId == expectedFrameId);
+        if (!ready) {
+            reason = "expected real frame is not rendered yet";
+        }
+    }
+    else {
+        const uint64_t expectedPreviousFrameId = static_cast<uint64_t>(expectedTimelineStep / 2);
+        const uint32_t targetIndex = findInterpolationTargetIndex(expectedPreviousFrameId);
+        ready = findReadyInterpolatedOutputForPreviousFrame(expectedPreviousFrameId) != UINT32_MAX;
+        if (!ready) {
+            if (targetIndex < ncnnInterpolationTargets.size()) {
+                const auto& target = ncnnInterpolationTargets[targetIndex];
+                if (target.state == InterpolationTargetState::Pending) {
+                    reason = target.waitingForFutureSource ? "waiting for future source frame" : "interpolation target pending";
+                }
+                else if (target.state == InterpolationTargetState::Running) {
+                    reason = "NCNN still running";
+                }
+                else if (target.state == InterpolationTargetState::Dropped) {
+                    reason = "interpolation target dropped: " + target.reason;
+                }
+                else {
+                    reason = "interpolated output is not ready";
+                }
+            }
+            else {
+                reason = "interpolation target is not registered";
+            }
+        }
+    }
+
+    switch (mode) {
+    case PresentationCommandMode::DisplayInterpolatedFrame:
+        chosenType = "interp";
+        break;
+    case PresentationCommandMode::RenderFrame:
+    case PresentationCommandMode::DisplayCapturedSourceFrame:
+        chosenType = "real";
+        break;
+    case PresentationCommandMode::DisplayHeldSourceFrame:
+        chosenType = "real-held";
+        break;
+    default:
+        break;
+    }
+
+}
+
+void VulkanNcnnRenderer::logDebugPresentQueue(const char* phase, PresentationCommandMode mode, bool canRenderSourceFrame) const {
+}
+
+void VulkanNcnnRenderer::markDebugRealFramePresented(uint32_t sourceIndex) {
+    if (sourceIndex >= offscreenFrames.size()) {
+        return;
+    }
+
+    auto& frame = offscreenFrames[sourceIndex];
+    const bool alreadyPresented = frame.debugPresented;
+    if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled &&
+        !alreadyPresented &&
+        frame.debugFrameId != UINT64_MAX &&
+        frame.debugFrameId > 0) {
+        const std::string expectedPreviousInterp = debugInterpolatedFrameLabel(frame.debugFrameId - 1);
+        if (debugLastPresentedFrameLabel != expectedPreviousInterp &&
+            debugLastPresentedFrameLabel != expectedPreviousInterp + "(dropped)" &&
+            debugLastPresentedFrameLabel != "none") {
+        }
+    }
+
+    frame.debugPresented = true;
+    debugLastPresentedFrameLabel = debugRealFrameLabel(frame.debugFrameId);
+    if (frame.debugFrameId != UINT64_MAX) {
+        debugLastPresentedTimelineStep = static_cast<int64_t>(frame.debugFrameId * 2);
+    }
+}
+
+void VulkanNcnnRenderer::markDebugInterpolatedFramePresented(uint64_t previousFrameId) {
+    if (previousFrameId != UINT64_MAX && isDebugRealFramePresented(previousFrameId + 1)) {
+    }
+
+    debugLastPresentedFrameLabel = debugInterpolatedFrameLabel(previousFrameId);
+    if (previousFrameId != UINT64_MAX) {
+        debugLastPresentedTimelineStep = static_cast<int64_t>(previousFrameId * 2 + 1);
+    }
+}
+
 void VulkanNcnnRenderer::processCapturedFrameForSlot(uint32_t frameSlot) {
     if (frameSlot >= pendingCaptureSlotByFrame.size()) {
         return;
@@ -350,6 +843,15 @@ void VulkanNcnnRenderer::processCapturedFrameForSlot(uint32_t frameSlot) {
         ncnnPresentationState.previousNcnnGpuFrameIndex < offscreenFrames.size();
 
     ++capturedFrameCount;
+
+    if (ncnnPresentationState.hasNcnnGpuFramePair) {
+        createInterpolationTargetIfNeeded(
+            ncnnPresentationState.previousNcnnGpuFrameIndex,
+            ncnnPresentationState.currentNcnnGpuFrameIndex);
+    }
+    else {
+    }
+    updateWaitingInterpolationTargets();
 #endif
 
 }
@@ -412,6 +914,16 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     if (offscreenSlot == UINT32_MAX) {
         throw std::runtime_error("offscreen frame history ring is exhausted!");
     }
+
+    const uint64_t realFrameId = nextDebugFrameId++;
+    const bool renderedFrameIsExpected =
+        static_cast<int64_t>(realFrameId * 2) == debugLastPresentedTimelineStep + 1;
+    if (offscreenFrames[offscreenSlot].debugFrameId != UINT64_MAX) {
+    }
+    offscreenFrames[offscreenSlot].debugFrameId = realFrameId;
+    offscreenFrames[offscreenSlot].debugPresented = false;
+
+    logOffscreenFrameMap();
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -540,11 +1052,24 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
 
 #if HAS_NCNN
     if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer) {
-        if (ncnnPresentationState.hasNcnnDisplayFrame) {
-            displayNcnnFrameOnSwapchain(commandBuffer, imageIndex);
+        if (renderedFrameIsExpected) {
+            displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, offscreenSlot);
+            ncnnPresentationState.ncnnLastPresentedSourceIndex = offscreenSlot;
+            ncnnPresentationState.ncnnHeldSourceDisplayIndex = UINT32_MAX;
+            ncnnPresentationState.ncnnRenderAheadPending = false;
         }
-        else if (ncnnPresentationState.ncnnPendingSourceDisplayIndex < offscreenFrames.size()) {
-            displayCapturedNcnnSourceOnSwapchain(commandBuffer, imageIndex);
+        else if (ncnnPresentationState.hasNcnnDisplayFrame) {
+            if (ncnnPresentationState.ncnnPendingInterpolatedOutputIndex < ncnnOutputBuffers.size()) {
+            }
+            if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+                displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnLastPresentedSourceIndex);
+                ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+                ncnnPresentationState.ncnnRenderAheadPending = true;
+            }
+            else {
+                displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, offscreenSlot);
+                ncnnPresentationState.ncnnLastPresentedSourceIndex = offscreenSlot;
+            }
         }
         else if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
             // Render ahead without advancing presentation.
@@ -676,13 +1201,16 @@ bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
 
 void VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
     vkWaitForFences(device, 1, &inFlightFences[frameSlot], VK_TRUE, UINT64_MAX);
-    for (auto& output : ncnnOutputBuffers) {
+    for (uint32_t outputIndex = 0; outputIndex < ncnnOutputBuffers.size(); ++outputIndex) {
+        auto& output = ncnnOutputBuffers[outputIndex];
         if (output.inUseByGraphics && output.graphicsFrameSlot == frameSlot) {
             output.inUseByGraphics = false;
             output.graphicsFrameSlot = UINT32_MAX;
         }
     }
+    releaseObsoleteNcnnOutputBuffers();
     processCapturedFrameForSlot(frameSlot);
+    updateWaitingInterpolationTargets();
 
 #if HAS_NCNN
     pollAsyncNcnnInference();
@@ -732,6 +1260,10 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
     }
 
     pendingCaptureSlotByFrame[frameSlot] = capturedNcnnSlot;
+    if (capturedNcnnSlot < offscreenFrames.size()) {
+    }
+    else {
+    }
 }
 
 void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
@@ -759,6 +1291,8 @@ void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
     else if (result != VK_SUCCESS) {
         throw std::runtime_error("failed to present swap chain image!");
     }
+    else {
+    }
 }
 
 void VulkanNcnnRenderer::advanceFrameIndex() {
@@ -775,8 +1309,154 @@ void VulkanNcnnRenderer::drawFrame() {
     }
 
     const bool canRenderSourceFrame = findAvailableOffscreenFrameSlot() != UINT32_MAX;
-    const PresentationCommandMode mode =
-        choosePresentationCommandMode(ncnnPresentationState, offscreenFrames.size(), canRenderSourceFrame);
+    PresentationCommandMode mode = PresentationCommandMode::RenderFrame;
+    std::string actualChosen = "none";
+    const int64_t expectedTimelineStep = debugLastPresentedTimelineStep + 1;
+    const bool expectedIsReal = (expectedTimelineStep % 2) == 0;
+    bool useChronologicalInterpolation = false;
+#if HAS_NCNN
+    useChronologicalInterpolation =
+        ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer;
+#endif
+
+    if (!useChronologicalInterpolation) {
+        mode = choosePresentationCommandMode(ncnnPresentationState, offscreenFrames.size(), canRenderSourceFrame);
+        if (mode == PresentationCommandMode::RenderFrame) {
+            actualChosen = debugRealFrameLabel(nextDebugFrameId);
+        }
+        else {
+            actualChosen = "presentation-only";
+        }
+    }
+    else if (expectedIsReal) {
+        const uint64_t expectedFrameId = static_cast<uint64_t>(expectedTimelineStep / 2);
+        const uint32_t pendingRealSlot = findEarliestUnpresentedRealFrameSlot();
+        if (pendingRealSlot < offscreenFrames.size() &&
+            offscreenFrames[pendingRealSlot].debugFrameId == expectedFrameId) {
+            ncnnPresentationState.ncnnPendingSourceDisplayIndex = pendingRealSlot;
+            mode = PresentationCommandMode::DisplayCapturedSourceFrame;
+            actualChosen = debugRealFrameLabel(expectedFrameId);
+            if (ncnnPresentationState.hasNcnnDisplayFrame &&
+                ncnnPresentationState.ncnnPendingInterpolatedOutputIndex < ncnnOutputBuffers.size()) {
+            }
+        }
+        else if (canRenderSourceFrame && nextDebugFrameId == expectedFrameId) {
+            mode = PresentationCommandMode::RenderFrame;
+            actualChosen = debugRealFrameLabel(expectedFrameId);
+        }
+        else if (ncnnPresentationState.ncnnHeldSourceDisplayIndex < offscreenFrames.size()) {
+            mode = PresentationCommandMode::DisplayHeldSourceFrame;
+            actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnHeldSourceDisplayIndex].debugFrameId);
+        }
+        else if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+            ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+            mode = PresentationCommandMode::DisplayHeldSourceFrame;
+            actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnHeldSourceDisplayIndex].debugFrameId);
+        }
+        else {
+            mode = PresentationCommandMode::RenderFrame;
+            actualChosen = "none";
+        }
+    }
+    else {
+        const uint64_t expectedPreviousFrameId = static_cast<uint64_t>(expectedTimelineStep / 2);
+        uint32_t expectedTargetIndex = findInterpolationTargetIndex(expectedPreviousFrameId);
+        if (expectedTargetIndex >= ncnnInterpolationTargets.size()) {
+            const uint32_t previousSlot = findOffscreenSlotForDebugFrame(expectedPreviousFrameId);
+            const uint32_t currentSlot = findOffscreenSlotForDebugFrame(expectedPreviousFrameId + 1);
+            if (previousSlot < offscreenFrames.size() && currentSlot < offscreenFrames.size()) {
+                createInterpolationTargetIfNeeded(previousSlot, currentSlot);
+                expectedTargetIndex = findInterpolationTargetIndex(expectedPreviousFrameId);
+            }
+            else if (previousSlot < offscreenFrames.size() &&
+                     currentSlot >= offscreenFrames.size() &&
+                     nextDebugFrameId == expectedPreviousFrameId + 1) {
+                expectedTargetIndex = createWaitingInterpolationTargetIfNeeded(expectedPreviousFrameId, previousSlot);
+                mode = canRenderSourceFrame ? PresentationCommandMode::RenderFrame : PresentationCommandMode::DisplayHeldSourceFrame;
+                if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+                    ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+                    actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnLastPresentedSourceIndex].debugFrameId);
+                }
+                else {
+                    actualChosen = debugRealFrameLabel(expectedPreviousFrameId);
+                }
+                if (canRenderSourceFrame) {
+                }
+                else {
+                }
+            }
+            else {
+                debugLastPresentedFrameLabel = debugInterpolatedFrameLabel(expectedPreviousFrameId) + "(dropped)";
+                debugLastPresentedTimelineStep = expectedTimelineStep;
+                mode = PresentationCommandMode::DisplayHeldSourceFrame;
+                if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+                    ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+                    actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnHeldSourceDisplayIndex].debugFrameId);
+                }
+                else {
+                    actualChosen = "none";
+                }
+            }
+        }
+
+        if (mode != PresentationCommandMode::DisplayHeldSourceFrame &&
+            expectedTargetIndex < ncnnInterpolationTargets.size() &&
+            ncnnInterpolationTargets[expectedTargetIndex].state == InterpolationTargetState::Dropped) {
+            debugLastPresentedFrameLabel = debugInterpolatedFrameLabel(expectedPreviousFrameId) + "(dropped)";
+            debugLastPresentedTimelineStep = expectedTimelineStep;
+            mode = PresentationCommandMode::DisplayHeldSourceFrame;
+            if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+                ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+                actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnHeldSourceDisplayIndex].debugFrameId);
+            }
+            else {
+                actualChosen = "none";
+            }
+        }
+        const uint32_t outputIndex = findReadyInterpolatedOutputForPreviousFrame(expectedPreviousFrameId);
+        if (mode != PresentationCommandMode::DisplayHeldSourceFrame && outputIndex != UINT32_MAX) {
+            ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = outputIndex;
+            ncnnPresentationState.hasNcnnDisplayFrame = true;
+            mode = PresentationCommandMode::DisplayInterpolatedFrame;
+            actualChosen = debugInterpolatedFrameLabel(expectedPreviousFrameId);
+        }
+        else if (mode != PresentationCommandMode::DisplayHeldSourceFrame && canRenderSourceFrame) {
+            if (ncnnPresentationState.ncnnPendingSourceDisplayIndex < offscreenFrames.size()) {
+            }
+            mode = PresentationCommandMode::RenderFrame;
+            if (ncnnPresentationState.ncnnHeldSourceDisplayIndex < offscreenFrames.size()) {
+                actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnHeldSourceDisplayIndex].debugFrameId);
+            }
+            else if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+                actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnLastPresentedSourceIndex].debugFrameId);
+            }
+            else {
+                actualChosen = debugRealFrameLabel(nextDebugFrameId);
+            }
+        }
+        else if (mode != PresentationCommandMode::DisplayHeldSourceFrame &&
+                 ncnnPresentationState.ncnnHeldSourceDisplayIndex < offscreenFrames.size()) {
+            mode = PresentationCommandMode::DisplayHeldSourceFrame;
+            actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnHeldSourceDisplayIndex].debugFrameId);
+        }
+        else if (mode != PresentationCommandMode::DisplayHeldSourceFrame &&
+                 ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+            ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+            mode = PresentationCommandMode::DisplayHeldSourceFrame;
+            actualChosen = debugRealFrameLabel(offscreenFrames[ncnnPresentationState.ncnnHeldSourceDisplayIndex].debugFrameId);
+        }
+        else if (mode != PresentationCommandMode::DisplayHeldSourceFrame) {
+            mode = PresentationCommandMode::RenderFrame;
+            actualChosen = "none";
+        }
+    }
+
+    if (!canRenderSourceFrame) {
+        for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
+        }
+    }
+    logDebugPresentQueue("before", mode, canRenderSourceFrame);
+    logDebugPresentState(mode, canRenderSourceFrame, actualChosen);
 
     updateSkinAnimation(frameDeltaSeconds, frameSlot);
 
@@ -788,5 +1468,6 @@ void VulkanNcnnRenderer::drawFrame() {
     const uint32_t capturedNcnnSlot = recordMainRenderCommands(frameSlot, imageIndex, mode);
     submitGraphicsWork(frameSlot, imageIndex, capturedNcnnSlot);
     handlePresentation(imageIndex);
+    logDebugPresentQueue("after", mode, false);
     advanceFrameIndex();
 }

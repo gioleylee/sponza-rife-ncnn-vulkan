@@ -142,19 +142,8 @@ void VulkanNcnnRenderer::initNcnn() {
     }
     ncnnInitialized = true;
 
-    std::cout << "[NCNN] initialized (gpu_count=" << gpuCount
-              << ", renderer_gpu_index=" << ncnnRendererDeviceIndex
-              << ", vulkan_compute=" << (net.opt.use_vulkan_compute ? "on" : "off") << ")" << std::endl;
+    std::cout << "[NCNN] initialized (vulkan_compute=" << (net.opt.use_vulkan_compute ? "on" : "off") << ")" << std::endl;
 
-    std::cout << "[NCNN] queue isolation "
-              << (ncnnCanRunWithoutQueueMutex ? "enabled" : "disabled; using shared queue mutex")
-              << " (ncnn_compute=" << ncnnComputeQueueFamilyIndex << ":0"
-              << ", ncnn_transfer=" << ncnnTransferQueueFamilyIndex << ":0"
-              << ", graphics=" << graphicsQueueFamilyIndex << ":" << graphicsQueueIndex
-              << ", present=" << presentQueueFamilyIndex << ":" << presentQueueIndex
-              << ", shared_resource_family="
-              << (ncnnUsesGraphicsQueueFamily ? "compatible" : "needs ownership transfer")
-              << ")" << std::endl;
 }
 
 void VulkanNcnnRenderer::shutdownNcnn() {
@@ -208,9 +197,6 @@ void VulkanNcnnRenderer::tryLoadDefaultNcnnModel() {
                   << paramPath << " and " << binPath << std::endl;
         return;
     }
-
-    std::cout << "[NCNN] using " << (hasOptimizedModel ? "output" : "original model")
-              << ": " << paramPath << " + " << binPath << std::endl;
 
     if (loadNcnnModel(paramPath, binPath)) {
         ncnn::Extractor extractor = net.create_extractor();
@@ -717,8 +703,7 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
         ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
         ncnnPresentationState.hasNcnnDisplayFrame = true;
         if (previousDivisor != ncnnPresentationState.ncnnInferenceScaleDivisor || (ncnnPresentationState.ncnnCompletedInferenceCount % 120) == 1) {
-            std::cout << "[NCNN] async inference"
-                      << " display=" << result.inputW << "x" << result.inputH
+            std::cout << "[NCNN] display=" << result.inputW << "x" << result.inputH
                       << ", inference=" << result.inferenceW << "x" << result.inferenceH
                       << ", scale_divisor=" << ncnnPresentationState.ncnnInferenceScaleDivisor
                       << ", inference_ms=" << result.inferenceMs << std::endl;

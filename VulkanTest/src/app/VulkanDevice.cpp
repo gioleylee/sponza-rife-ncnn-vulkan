@@ -109,11 +109,6 @@ void VulkanNcnnRenderer::pickPhysicalDevice() {
 
     VkPhysicalDeviceProperties selectedProperties{};
     vkGetPhysicalDeviceProperties(physicalDevice, &selectedProperties);
-    std::cout << "[Vulkan] selected GPU: " << selectedProperties.deviceName
-              << " (vendor=0x" << std::hex << selectedProperties.vendorID
-              << ", device=0x" << selectedProperties.deviceID << std::dec
-              << ", type=" << selectedProperties.deviceType << ")"
-              << std::endl;
 }
 
 void VulkanNcnnRenderer::createLogicalDevice() {
@@ -311,11 +306,6 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     vkGetDeviceQueue(device, presentQueueFamilyIndex, presentQueueIndex, &presentQueue);
     vkGetDeviceQueue(device, computeQueueFamilyIndex, computeQueueIndex, &computeQueue);
 
-    std::cout << "[Vulkan] renderer queues:"
-              << " graphics=" << graphicsQueueFamilyIndex << ":" << graphicsQueueIndex
-              << ", present=" << presentQueueFamilyIndex << ":" << presentQueueIndex
-              << ", compute=" << computeQueueFamilyIndex << ":" << computeQueueIndex
-              << std::endl;
 #if defined(_WIN32)
     vkGetMemoryWin32HandleKHRFn =
         reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(vkGetDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));

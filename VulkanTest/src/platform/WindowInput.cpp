@@ -101,21 +101,36 @@ void VulkanNcnnRenderer::processInput(float deltaTime) {
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (!rKeyPressed) {
             const bool enableNcnnInterpolation = !ncnnPresentationState.ncnnRealtimeInterpolationEnabled;
-            waitForAsyncNcnnInference();
-            ncnnPresentationState = NcnnPresentationState{};
-            ncnnPresentationState.ncnnRealtimeInterpolationEnabled = enableNcnnInterpolation;
+
+            if (enableNcnnInterpolation) {
+                waitForAsyncNcnnInference();
+                ncnnPresentationState = NcnnPresentationState{};
+                ncnnPresentationState.ncnnRealtimeInterpolationEnabled = true;
+            }
+            else {
+                ncnnPresentationState.ncnnRealtimeInterpolationEnabled = false;
+                ncnnPresentationState.hasNcnnGpuFramePair = false;
+                ncnnPresentationState.currentNcnnGpuFrameIndex = UINT32_MAX;
+                ncnnPresentationState.previousNcnnGpuFrameIndex = UINT32_MAX;
+                ncnnPresentationState.hasNcnnDisplayFrame = false;
+                ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
+                ncnnPresentationState.ncnnPendingSourceDisplayIndex = UINT32_MAX;
+                ncnnPresentationState.ncnnHeldSourceDisplayIndex = UINT32_MAX;
+                ncnnPresentationState.ncnnLastPresentedSourceIndex = UINT32_MAX;
+                ncnnPresentationState.ncnnRenderAheadPending = false;
+                ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
+            }
+
             for (auto& output : ncnnOutputBuffers) {
-                output.ready = false;
-                output.inUseByInference = false;
-                output.inUseByGraphics = false;
-                output.graphicsFrameSlot = UINT32_MAX;
-                output.sequence = 0;
+                if (!output.inUseByInference) {
+                    output.ready = false;
+                    output.sequence = 0;
+                }
             }
             capturedFrameCount = 0;
             previousFrameCaptureProcessMs = 0.0;
             lastFrameCaptureProcessMs = 0.0;
             lastFramePairCaptureProcessMs = 0.0;
-            pendingCaptureSlotByFrame.fill(UINT32_MAX);
             std::cout << "[NCNN] realtime interpolation "
                       << (ncnnPresentationState.ncnnRealtimeInterpolationEnabled ? "enabled" : "disabled")
                       << std::endl;

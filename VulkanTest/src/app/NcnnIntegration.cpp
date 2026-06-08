@@ -686,6 +686,16 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
     }
     resetNcnnAsyncState(ncnnPresentationState);
 
+    if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled) {
+        if (result.outputIndex < ncnnOutputBuffers.size()) {
+            ncnnOutputBuffers[result.outputIndex].ready = false;
+            ncnnOutputBuffers[result.outputIndex].sequence = 0;
+        }
+        resetNcnnFramePairState(ncnnPresentationState);
+        resetNcnnPendingPresentationState(ncnnPresentationState);
+        return;
+    }
+
     if (result.processRet == 0) {
         if (result.outputIndex >= ncnnOutputBuffers.size()) {
             std::cerr << "[NCNN] async GPU interpolation finished with invalid output slot" << std::endl;

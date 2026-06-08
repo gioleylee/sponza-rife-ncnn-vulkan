@@ -109,6 +109,34 @@ void VulkanNcnnRenderer::initNcnn() {
     ncnnRendererDeviceIndex = findNcnnDeviceIndexForRenderer();
     applyNcnnVulkanOptions();
     net.opt.num_threads = 1;
+
+    uint32_t ncnnComputeQueueFamilyIndex = UINT32_MAX;
+    uint32_t ncnnTransferQueueFamilyIndex = UINT32_MAX;
+    if (ncnnRendererDeviceIndex >= 0 && ncnnRendererDeviceIndex < gpuCount) {
+        const ncnn::GpuInfo& gpuInfo = ncnn::get_gpu_info(ncnnRendererDeviceIndex);
+        ncnnComputeQueueFamilyIndex = gpuInfo.compute_queue_family_index();
+        ncnnTransferQueueFamilyIndex = gpuInfo.transfer_queue_family_index();
+    }
+
+    const auto rendererQueueUsesNcnnQueueZero = [&](uint32_t familyIndex, uint32_t queueIndex) {
+        if (queueIndex != 0) {
+            return false;
+        }
+
+        return familyIndex == ncnnComputeQueueFamilyIndex ||
+               familyIndex == ncnnTransferQueueFamilyIndex;
+    };
+
+    const bool ncnnUsesGraphicsQueueFamily =
+        ncnnComputeQueueFamilyIndex == graphicsQueueFamilyIndex &&
+        ncnnTransferQueueFamilyIndex == graphicsQueueFamilyIndex;
+
+    ncnnCanRunWithoutQueueMutex =
+        ncnnRendererDeviceIndex >= 0 &&
+        ncnnUsesGraphicsQueueFamily &&
+        !rendererQueueUsesNcnnQueueZero(graphicsQueueFamilyIndex, graphicsQueueIndex) &&
+        !rendererQueueUsesNcnnQueueZero(presentQueueFamilyIndex, presentQueueIndex);
+
     if (gpuCount > 0 && !HAS_NCNN_WARP_VK) {
         std::cout << "[NCNN] NCNN warp Vulkan shaders not found; forcing CPU inference path" << std::endl;
     }
@@ -117,6 +145,16 @@ void VulkanNcnnRenderer::initNcnn() {
     std::cout << "[NCNN] initialized (gpu_count=" << gpuCount
               << ", renderer_gpu_index=" << ncnnRendererDeviceIndex
               << ", vulkan_compute=" << (net.opt.use_vulkan_compute ? "on" : "off") << ")" << std::endl;
+
+    std::cout << "[NCNN] queue isolation "
+              << (ncnnCanRunWithoutQueueMutex ? "enabled" : "disabled; using shared queue mutex")
+              << " (ncnn_compute=" << ncnnComputeQueueFamilyIndex << ":0"
+              << ", ncnn_transfer=" << ncnnTransferQueueFamilyIndex << ":0"
+              << ", graphics=" << graphicsQueueFamilyIndex << ":" << graphicsQueueIndex
+              << ", present=" << presentQueueFamilyIndex << ":" << presentQueueIndex
+              << ", shared_resource_family="
+              << (ncnnUsesGraphicsQueueFamily ? "compatible" : "needs ownership transfer")
+              << ")" << std::endl;
 }
 
 void VulkanNcnnRenderer::shutdownNcnn() {
@@ -130,6 +168,7 @@ void VulkanNcnnRenderer::shutdownNcnn() {
 
     ncnnInitialized = false;
     ncnnRendererDeviceIndex = -1;
+    ncnnCanRunWithoutQueueMutex = false;
     ncnnModelLoaded = false;
     ncnnModelAttachedToRenderer = false;
 }
@@ -776,25 +815,36 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         result.outputIndex = outputIndex;
         result.currentSourceIndex = currIndex;
 
-        std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         const auto start = std::chrono::high_resolution_clock::now();
-        result.processRet = ncnnFrameInterpolator.processGpuRgbaFrames(
-            prevImage,
-            prevImageView,
-            prevMemory,
-            currImage,
-            currImageView,
-            currMemory,
-            inputFormat,
-            outBuffer,
-            outMemory,
-            outSize,
-            inputW,
-            inputH,
-            inferenceW,
-            inferenceH,
-            0.5f
-        );
+
+        const auto processFrames = [&]() {
+            return ncnnFrameInterpolator.processGpuRgbaFrames(
+                prevImage,
+                prevImageView,
+                prevMemory,
+                currImage,
+                currImageView,
+                currMemory,
+                inputFormat,
+                outBuffer,
+                outMemory,
+                outSize,
+                inputW,
+                inputH,
+                inferenceW,
+                inferenceH,
+                0.5f
+            );
+        };
+
+        if (ncnnCanRunWithoutQueueMutex) {
+            result.processRet = processFrames();
+        }
+        else {
+            std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
+            result.processRet = processFrames();
+        }
+
         result.inferenceMs = std::chrono::duration<double, std::milli>(
             std::chrono::high_resolution_clock::now() - start).count();
         return result;

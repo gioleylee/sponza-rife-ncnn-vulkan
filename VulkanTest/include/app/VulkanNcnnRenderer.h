@@ -81,6 +81,12 @@ private:
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     VkQueue presentQueue = VK_NULL_HANDLE;
     VkQueue computeQueue = VK_NULL_HANDLE;
+    uint32_t graphicsQueueFamilyIndex = UINT32_MAX;
+    uint32_t presentQueueFamilyIndex = UINT32_MAX;
+    uint32_t computeQueueFamilyIndex = UINT32_MAX;
+    uint32_t graphicsQueueIndex = 0;
+    uint32_t presentQueueIndex = 0;
+    uint32_t computeQueueIndex = 0;
     std::mutex vulkanQueueMutex;
 #if defined(_WIN32)
     PFN_vkGetMemoryWin32HandleKHR vkGetMemoryWin32HandleKHRFn = nullptr;
@@ -220,6 +226,7 @@ private:
     ncnn::Net net;
     bool ncnnInitialized = false;
     int ncnnRendererDeviceIndex = -1;
+    bool ncnnCanRunWithoutQueueMutex = false;
     bool ncnnModelLoaded = false;
     bool ncnnModelAttachedToRenderer = false;
     bool rKeyPressed = false;

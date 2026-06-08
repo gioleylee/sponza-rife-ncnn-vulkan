@@ -27,9 +27,14 @@
 namespace {
 
 PresentationCommandMode choosePresentationCommandMode(const NcnnPresentationState& ncnnState,
-                                                      size_t offscreenFrameCount) {
+                                                      size_t offscreenFrameCount,
+                                                      bool canRenderSourceFrame) {
     // RenderFrame: render a new scene frame into the offscreen history, then present that source frame.
     PresentationCommandMode mode = PresentationCommandMode::RenderFrame;
+
+    if (canRenderSourceFrame) {
+        return mode;
+    }
 
     // DisplayInterpolatedFrame: present the completed NCNN N+0.5 output before advancing source frames.
     if (ncnnState.ncnnRealtimeInterpolationEnabled && ncnnState.hasNcnnDisplayFrame) {
@@ -530,17 +535,24 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
 
     vkCmdEndRenderPass(commandBuffer);
 
-    // Frame flow:
-    //   scene render -> sampled offscreen image -> fused NCNN tensor preprocessor
-
 #if HAS_NCNN
-    if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled &&
-        ncnnModelAttachedToRenderer &&
-        ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
-        // Render ahead without advancing presentation
-        displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnLastPresentedSourceIndex);
-        ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
-        ncnnPresentationState.ncnnRenderAheadPending = true;
+    if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer) {
+        if (ncnnPresentationState.hasNcnnDisplayFrame) {
+            displayNcnnFrameOnSwapchain(commandBuffer, imageIndex);
+        }
+        else if (ncnnPresentationState.ncnnPendingSourceDisplayIndex < offscreenFrames.size()) {
+            displayCapturedNcnnSourceOnSwapchain(commandBuffer, imageIndex);
+        }
+        else if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+            // Render ahead without advancing presentation.
+            displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnLastPresentedSourceIndex);
+            ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+            ncnnPresentationState.ncnnRenderAheadPending = true;
+        }
+        else {
+            displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, offscreenSlot);
+            ncnnPresentationState.ncnnLastPresentedSourceIndex = offscreenSlot;
+        }
     }
     else
 #endif
@@ -750,8 +762,9 @@ void VulkanNcnnRenderer::drawFrame() {
         return;
     }
 
+    const bool canRenderSourceFrame = findAvailableOffscreenFrameSlot() != UINT32_MAX;
     const PresentationCommandMode mode =
-        choosePresentationCommandMode(ncnnPresentationState, offscreenFrames.size());
+        choosePresentationCommandMode(ncnnPresentationState, offscreenFrames.size(), canRenderSourceFrame);
 
     updateSkinAnimation(frameDeltaSeconds, frameSlot);
 

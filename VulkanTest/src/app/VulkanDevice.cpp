@@ -295,9 +295,27 @@ void VulkanNcnnRenderer::createLogicalDevice() {
         throw std::runtime_error("failed to create logical device!");
     }
 
-    vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
-    vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
-    vkGetDeviceQueue(device, indices.computeFamily.value(), 0, &computeQueue);
+    graphicsQueueFamilyIndex = indices.graphicsFamily.value();
+    presentQueueFamilyIndex = indices.presentFamily.value();
+    computeQueueFamilyIndex = indices.computeFamily.value();
+
+    const auto chooseRendererQueueIndex = [&](uint32_t queueFamilyIndex) {
+        return queueFamilyProperties[queueFamilyIndex].queueCount > 1 ? 1u : 0u;
+    };
+
+    graphicsQueueIndex = chooseRendererQueueIndex(graphicsQueueFamilyIndex);
+    presentQueueIndex = chooseRendererQueueIndex(presentQueueFamilyIndex);
+    computeQueueIndex = chooseRendererQueueIndex(computeQueueFamilyIndex);
+
+    vkGetDeviceQueue(device, graphicsQueueFamilyIndex, graphicsQueueIndex, &graphicsQueue);
+    vkGetDeviceQueue(device, presentQueueFamilyIndex, presentQueueIndex, &presentQueue);
+    vkGetDeviceQueue(device, computeQueueFamilyIndex, computeQueueIndex, &computeQueue);
+
+    std::cout << "[Vulkan] renderer queues:"
+              << " graphics=" << graphicsQueueFamilyIndex << ":" << graphicsQueueIndex
+              << ", present=" << presentQueueFamilyIndex << ":" << presentQueueIndex
+              << ", compute=" << computeQueueFamilyIndex << ":" << computeQueueIndex
+              << std::endl;
 #if defined(_WIN32)
     vkGetMemoryWin32HandleKHRFn =
         reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(vkGetDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));

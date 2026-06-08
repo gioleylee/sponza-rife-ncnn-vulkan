@@ -24,7 +24,7 @@ inline constexpr int NCNN_MIN_INFERENCE_SCALE_DIVISOR = 1;
 inline constexpr int NCNN_MAX_INFERENCE_SCALE_DIVISOR = 1;
 inline constexpr double NCNN_TARGET_INFERENCE_MS = 10.0;
 inline constexpr double NCNN_FAST_INFERENCE_MS = 6.0;
-inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 4;
+inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 6;
 inline constexpr uint32_t NCNN_OUTPUT_BUFFER_COUNT = 3;
 
 inline const std::vector<const char*> deviceExtensions = {

@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -62,7 +63,9 @@ PresentationCommandMode choosePresentationCommandMode(const NcnnPresentationStat
 }
 
 constexpr float SPONZA_FLOOR_Y = -1.264425f;
-constexpr glm::vec3 CESIUM_MAN_SCENE_POSITION = glm::vec3(0.75f, SPONZA_FLOOR_Y + 1.25f, 0.75f);
+constexpr glm::vec3 CESIUM_MAN_SCENE_POSITION = glm::vec3(3.0f, SPONZA_FLOOR_Y + 1.25f, 0.0f);
+constexpr float CESIUM_MAN_WALK_RADIUS = 1.0f;
+constexpr float CESIUM_MAN_WALK_SECONDS_PER_LOOP = 4.0f;
 
 }
 
@@ -630,7 +633,16 @@ void VulkanNcnnRenderer::updateUniformBuffer(uint32_t currentImage) {
 
     memcpy(cubeUniformBuffersMapped[currentImage], &cubeUbo, sizeof(cubeUbo));
 
-    glm::mat4 cesiumModel = glm::translate(glm::mat4(1.0f), CESIUM_MAN_SCENE_POSITION);
+    float walkAngle = elapsedTimeSeconds * glm::two_pi<float>() / CESIUM_MAN_WALK_SECONDS_PER_LOOP;
+    glm::vec3 cesiumPosition = CESIUM_MAN_SCENE_POSITION +
+        glm::vec3(std::cos(walkAngle) * CESIUM_MAN_WALK_RADIUS,
+                  0.0f,
+                  std::sin(walkAngle) * CESIUM_MAN_WALK_RADIUS);
+    glm::vec3 walkTangent = glm::normalize(glm::vec3(-std::sin(walkAngle), 0.0f, std::cos(walkAngle)));
+    float facingAngle = std::atan2(walkTangent.x, walkTangent.z);
+
+    glm::mat4 cesiumModel = glm::translate(glm::mat4(1.0f), cesiumPosition);
+    cesiumModel = glm::rotate(cesiumModel, facingAngle, glm::vec3(0.0f, 1.0f, 0.0f));
     cesiumModel = glm::scale(cesiumModel, glm::vec3(1.0f));
 
     UniformBufferObject cesiumUbo{};

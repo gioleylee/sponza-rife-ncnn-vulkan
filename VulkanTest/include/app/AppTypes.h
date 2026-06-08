@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,6 +27,8 @@ inline constexpr double NCNN_TARGET_INFERENCE_MS = 10.0;
 inline constexpr double NCNN_FAST_INFERENCE_MS = 6.0;
 inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 6;
 inline constexpr uint32_t NCNN_OUTPUT_BUFFER_COUNT = 3;
+// Keep the default single-worker until the NCNN/RIFE wrapper is made per-worker safe.
+inline constexpr uint32_t MAX_NCNN_IN_FLIGHT = 2;
 
 inline const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -189,6 +192,8 @@ struct NcnnOutputBuffer {
 struct AsyncNcnnResult {
     int processRet = -1;
     double inferenceMs = 0.0;
+    double queueWaitMs = 0.0;
+    double rifeProcessMs = 0.0;
     int inputW = 0;
     int inputH = 0;
     int inferenceW = 0;
@@ -205,7 +210,8 @@ enum class InterpolationTargetState {
     Pending,
     Running,
     Ready,
-    Presented,
+    Presenting,
+    Released,
     Dropped
 };
 
@@ -218,6 +224,9 @@ struct FrameInterpolationTarget {
     InterpolationTargetState state = InterpolationTargetState::Pending;
     bool waitingForFutureSource = false;
     std::string reason;
+#if HAS_NCNN
+    std::future<AsyncNcnnResult> future;
+#endif
 };
 
 struct NcnnPresentationState {
@@ -231,10 +240,7 @@ struct NcnnPresentationState {
     uint32_t ncnnHeldSourceDisplayIndex = UINT32_MAX;
     uint32_t ncnnLastPresentedSourceIndex = UINT32_MAX;
     bool ncnnRenderAheadPending = false;
-    bool ncnnInferenceInFlight = false;
-    uint32_t asyncNcnnPrevFrameIndex = UINT32_MAX;
-    uint32_t asyncNcnnCurrFrameIndex = UINT32_MAX;
-    uint32_t asyncNcnnOutputIndex = UINT32_MAX;
+    uint32_t ncnnRunningJobCount = 0;
     int ncnnInferenceScaleDivisor = NCNN_INITIAL_INFERENCE_SCALE_DIVISOR;
     uint64_t ncnnCompletedInferenceCount = 0;
     bool ncnnRealtimeInterpolationEnabled = false;

@@ -108,6 +108,7 @@ void VulkanNcnnRenderer::processInput(float deltaTime) {
                 ncnnPresentationState.ncnnRealtimeInterpolationEnabled = true;
             }
             else {
+                waitForAsyncNcnnInference();
                 ncnnPresentationState.ncnnRealtimeInterpolationEnabled = false;
                 ncnnPresentationState.hasNcnnGpuFramePair = false;
                 ncnnPresentationState.currentNcnnGpuFrameIndex = UINT32_MAX;

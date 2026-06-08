@@ -28,10 +28,7 @@ void resetNcnnFramePairState(NcnnPresentationState& state) {
 }
 
 void resetNcnnAsyncState(NcnnPresentationState& state) {
-    state.ncnnInferenceInFlight = false;
-    state.asyncNcnnPrevFrameIndex = UINT32_MAX;
-    state.asyncNcnnCurrFrameIndex = UINT32_MAX;
-    state.asyncNcnnOutputIndex = UINT32_MAX;
+    state.ncnnRunningJobCount = 0;
 }
 
 void resetNcnnAdaptiveInferenceState(NcnnPresentationState& state) {
@@ -447,12 +444,6 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
 
 uint32_t VulkanNcnnRenderer::findAvailableOffscreenFrameSlot() const {
     for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
-#if HAS_NCNN
-        if (ncnnPresentationState.ncnnInferenceInFlight &&
-            (slot == ncnnPresentationState.asyncNcnnPrevFrameIndex || slot == ncnnPresentationState.asyncNcnnCurrFrameIndex)) {
-            continue;
-        }
-#endif
         if (slot == ncnnPresentationState.currentNcnnGpuFrameIndex) {
             continue;
         }
@@ -466,6 +457,22 @@ uint32_t VulkanNcnnRenderer::findAvailableOffscreenFrameSlot() const {
             continue;
         }
         if (offscreenFrames[slot].debugFrameId != UINT64_MAX && !offscreenFrames[slot].debugPresented) {
+            continue;
+        }
+
+        bool usedByPendingInterpolation = false;
+        for (const auto& target : ncnnInterpolationTargets) {
+            if ((target.state == InterpolationTargetState::Pending ||
+                 target.state == InterpolationTargetState::Running ||
+                 target.state == InterpolationTargetState::Ready ||
+                 target.state == InterpolationTargetState::Presenting) &&
+                !target.waitingForFutureSource &&
+                (slot == target.previousSourceIndex || slot == target.currentSourceIndex)) {
+                usedByPendingInterpolation = true;
+                break;
+            }
+        }
+        if (usedByPendingInterpolation) {
             continue;
         }
 
@@ -610,13 +617,6 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
         return;
     }
 
-    std::cout << "[FrameInterp] Present interpolated frame "
-              << selectedOutput.debugPreviousFrameId << ".5"
-              << " output[" << ncnnPresentationState.ncnnPendingInterpolatedOutputIndex << "]"
-              << " using real " << selectedOutput.debugPreviousFrameId
-              << " -> " << selectedOutput.debugCurrentFrameId
-              << " swapchain[" << imageIndex << "]" << std::endl;
-
     const uint64_t presentedPreviousFrameId = selectedOutput.debugPreviousFrameId;
     const uint32_t targetIndex = findInterpolationTargetIndex(presentedPreviousFrameId);
     copyNcnnBufferToSwapchain(
@@ -633,7 +633,7 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
     markDebugInterpolatedFramePresented(presentedPreviousFrameId);
     if (targetIndex < ncnnInterpolationTargets.size()) {
         auto& target = ncnnInterpolationTargets[targetIndex];
-        target.state = InterpolationTargetState::Presented;
+        target.state = InterpolationTargetState::Presenting;
     }
 
     ncnnPresentationState.hasNcnnDisplayFrame = false;
@@ -650,16 +650,6 @@ void VulkanNcnnRenderer::displayNcnnSourceBufferOnSwapchain(VkCommandBuffer comm
     if (source.image == VK_NULL_HANDLE || source.size == 0) {
         return;
     }
-
-    std::cout << "[FrameInterp] Present real frame ";
-    if (source.debugFrameId == UINT64_MAX) {
-        std::cout << "unknown";
-    }
-    else {
-        std::cout << source.debugFrameId;
-    }
-    std::cout << " from offscreen[" << sourceIndex << "]"
-              << " swapchain[" << imageIndex << "]" << std::endl;
 
     markDebugRealFramePresented(sourceIndex);
     copyOffscreenImageToSwapchain(commandBuffer, imageIndex, sourceIndex);
@@ -680,16 +670,21 @@ void VulkanNcnnRenderer::displayCapturedNcnnSourceOnSwapchain(VkCommandBuffer co
 
 #if HAS_NCNN
 void VulkanNcnnRenderer::waitForAsyncNcnnInference() {
-    if (asyncNcnnInference.valid()) {
-        asyncNcnnInference.wait();
-        AsyncNcnnResult result = asyncNcnnInference.get();
+    for (uint32_t targetIndex = 0; targetIndex < ncnnInterpolationTargets.size(); ++targetIndex) {
+        auto& target = ncnnInterpolationTargets[targetIndex];
+        if (target.state != InterpolationTargetState::Running || !target.future.valid()) {
+            continue;
+        }
+
+        target.future.wait();
+        AsyncNcnnResult result = target.future.get();
         if (result.outputIndex < ncnnOutputBuffers.size()) {
             ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
             ncnnOutputBuffers[result.outputIndex].ready = false;
             ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = UINT64_MAX;
             ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = UINT64_MAX;
         }
-        dropInterpolationTarget(result.interpolationTargetIndex, "async wait abandoned result");
+        dropInterpolationTarget(targetIndex, "async wait abandoned result");
     }
 
     resetNcnnAsyncState(ncnnPresentationState);
@@ -697,38 +692,66 @@ void VulkanNcnnRenderer::waitForAsyncNcnnInference() {
 }
 
 void VulkanNcnnRenderer::pollAsyncNcnnInference() {
-    if (!asyncNcnnInference.valid()) {
-        ncnnPresentationState.ncnnInferenceInFlight = false;
-        return;
-    }
+    uint32_t runningCount = 0;
+    uint32_t readyCount = 0;
+    uint32_t pendingCount = 0;
 
-    if (asyncNcnnInference.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
-        return;
-    }
-
-    const AsyncNcnnResult result = asyncNcnnInference.get();
-    if (result.outputIndex < ncnnOutputBuffers.size()) {
-        ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
-    }
-    resetNcnnAsyncState(ncnnPresentationState);
-
-    if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled) {
-        if (result.outputIndex < ncnnOutputBuffers.size()) {
-            ncnnOutputBuffers[result.outputIndex].ready = false;
-            ncnnOutputBuffers[result.outputIndex].sequence = 0;
-            ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = UINT64_MAX;
-            ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = UINT64_MAX;
+    for (uint32_t targetIndex = 0; targetIndex < ncnnInterpolationTargets.size(); ++targetIndex) {
+        auto& target = ncnnInterpolationTargets[targetIndex];
+        if (target.state == InterpolationTargetState::Pending) {
+            ++pendingCount;
+            continue;
         }
-        dropInterpolationTarget(result.interpolationTargetIndex, "realtime interpolation disabled");
-        resetNcnnFramePairState(ncnnPresentationState);
-        resetNcnnPendingPresentationState(ncnnPresentationState);
-        return;
-    }
+        if (target.state == InterpolationTargetState::Ready) {
+            ++readyCount;
+            continue;
+        }
+        if (target.state != InterpolationTargetState::Running) {
+            continue;
+        }
 
-    if (result.processRet == 0) {
+        if (!target.future.valid()) {
+            dropInterpolationTarget(targetIndex, "running job has no future");
+            continue;
+        }
+        if (target.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            ++runningCount;
+            continue;
+        }
+
+        const AsyncNcnnResult result = target.future.get();
+        if (result.outputIndex < ncnnOutputBuffers.size()) {
+            ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
+        }
+
+        if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled) {
+            if (result.outputIndex < ncnnOutputBuffers.size()) {
+                ncnnOutputBuffers[result.outputIndex].ready = false;
+                ncnnOutputBuffers[result.outputIndex].sequence = 0;
+                ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = UINT64_MAX;
+                ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = UINT64_MAX;
+            }
+            dropInterpolationTarget(targetIndex, "realtime interpolation disabled");
+            resetNcnnFramePairState(ncnnPresentationState);
+            resetNcnnPendingPresentationState(ncnnPresentationState);
+            continue;
+        }
+
+        if (result.processRet != 0) {
+            std::cerr << "[NCNN] async GPU interpolation failed"
+                      << " (code=" << result.processRet
+                      << ", rife_process_ms=" << result.rifeProcessMs
+                      << ", queue_wait_ms=" << result.queueWaitMs
+                      << ", async_task_ms=" << result.inferenceMs << ")" << std::endl;
+            ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
+            dropInterpolationTarget(targetIndex, "NCNN inference failed");
+            continue;
+        }
+
         if (result.outputIndex >= ncnnOutputBuffers.size()) {
             std::cerr << "[NCNN] async GPU interpolation finished with invalid output slot" << std::endl;
-            return;
+            dropInterpolationTarget(targetIndex, "invalid NCNN output slot");
+            continue;
         }
 
         ++ncnnPresentationState.ncnnCompletedInferenceCount;
@@ -744,32 +767,27 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
         ncnnOutputBuffers[result.outputIndex].sequence = ncnnPresentationState.nextNcnnOutputSequence++;
         ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = result.previousFrameId;
         ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = result.currentFrameId;
-        if (result.interpolationTargetIndex < ncnnInterpolationTargets.size()) {
-            auto& target = ncnnInterpolationTargets[result.interpolationTargetIndex];
-            target.state = InterpolationTargetState::Ready;
-            target.outputIndex = result.outputIndex;
-            target.previousSourceIndex = result.previousSourceIndex;
-            target.currentSourceIndex = result.currentSourceIndex;
-        }
+        target.state = InterpolationTargetState::Ready;
+        target.outputIndex = result.outputIndex;
+        target.previousSourceIndex = result.previousSourceIndex;
+        target.currentSourceIndex = result.currentSourceIndex;
         ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = result.outputIndex;
         ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
         ncnnPresentationState.hasNcnnDisplayFrame = true;
+        ++readyCount;
+
+        logNcnnOutputBufferStates("ready");
         if (previousDivisor != ncnnPresentationState.ncnnInferenceScaleDivisor || (ncnnPresentationState.ncnnCompletedInferenceCount % 120) == 1) {
             std::cout << "[NCNN] display=" << result.inputW << "x" << result.inputH
-                      << ", inference=" << result.inferenceW << "x" << result.inferenceH
+                      << ", rife_input=" << result.inferenceW << "x" << result.inferenceH
                       << ", scale_divisor=" << ncnnPresentationState.ncnnInferenceScaleDivisor
-                      << ", inference_ms=" << result.inferenceMs << std::endl;
+                      << ", rife_process_ms=" << result.rifeProcessMs
+                      << ", queue_wait_ms=" << result.queueWaitMs
+                      << ", async_task_ms=" << result.inferenceMs << std::endl;
         }
-        return;
     }
 
-    std::cerr << "[NCNN] async GPU interpolation failed"
-              << " (code=" << result.processRet
-              << ", inference_ms=" << result.inferenceMs << ")" << std::endl;
-    // Do not leave the scheduler holding N forever if interpolation fails.
-    // Advance to N+1 on the next presentation tick and resume render-ahead.
-    ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
-    dropInterpolationTarget(result.interpolationTargetIndex, "NCNN inference failed");
+    ncnnPresentationState.ncnnRunningJobCount = runningCount;
 }
 
 bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
@@ -782,194 +800,221 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
     if (!ncnnModelAttachedToRenderer) {
         return false;
     }
-    if (ncnnPresentationState.ncnnInferenceInFlight) {
-        return false;
-    }
-    uint32_t targetIndex = UINT32_MAX;
-    for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
-        const auto& target = ncnnInterpolationTargets[i];
-        if (target.state == InterpolationTargetState::Pending &&
-            !target.waitingForFutureSource &&
-            target.previousSourceIndex < offscreenFrames.size() &&
-            target.currentSourceIndex < offscreenFrames.size()) {
-            targetIndex = i;
-            break;
-        }
-    }
-
-    if (targetIndex == UINT32_MAX) {
-        if (!ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair) {
-        }
-        return false;
-    }
     if (ncnnOutputBuffers.empty() || ncnnDisplayBufferSize == 0) {
         return false;
     }
 
-    uint32_t outputIndex = UINT32_MAX;
-    for (uint32_t i = 0; i < ncnnOutputBuffers.size(); ++i) {
-        const auto& output = ncnnOutputBuffers[i];
-        if (output.gpuBuffer != VK_NULL_HANDLE &&
-            output.size >= ncnnDisplayBufferSize &&
-            !output.ready &&
-            !output.inUseByInference &&
-            !output.inUseByGraphics) {
-            outputIndex = i;
+    uint32_t runningCount = 0;
+    uint32_t pendingCount = 0;
+    uint32_t readyCount = 0;
+    for (const auto& target : ncnnInterpolationTargets) {
+        if (target.state == InterpolationTargetState::Running) {
+            ++runningCount;
+        }
+        else if (target.state == InterpolationTargetState::Pending) {
+            ++pendingCount;
+        }
+        else if (target.state == InterpolationTargetState::Ready) {
+            ++readyCount;
+        }
+    }
+    ncnnPresentationState.ncnnRunningJobCount = runningCount;
+
+    if (runningCount >= MAX_NCNN_IN_FLIGHT) {
+        return false;
+    }
+
+    bool startedAny = false;
+    while (runningCount < MAX_NCNN_IN_FLIGHT) {
+        uint32_t targetIndex = UINT32_MAX;
+        for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
+            const auto& target = ncnnInterpolationTargets[i];
+            if (target.state == InterpolationTargetState::Pending &&
+                !target.waitingForFutureSource &&
+                target.previousSourceIndex < offscreenFrames.size() &&
+                target.currentSourceIndex < offscreenFrames.size()) {
+                targetIndex = i;
+                break;
+            }
+        }
+
+        if (targetIndex == UINT32_MAX) {
             break;
         }
-    }
 
-    if (outputIndex == UINT32_MAX) {
-        uint32_t reusableFutureTargetIndex = UINT32_MAX;
-        uint64_t reusableFutureFrameId = 0;
-        for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
-            const auto& candidate = ncnnInterpolationTargets[i];
-            if (candidate.state != InterpolationTargetState::Ready ||
-                candidate.outputIndex >= ncnnOutputBuffers.size() ||
-                candidate.previousFrameId <= ncnnInterpolationTargets[targetIndex].previousFrameId) {
-                continue;
-            }
-
-            const auto& output = ncnnOutputBuffers[candidate.outputIndex];
-            if (output.inUseByGraphics || output.inUseByInference) {
-                continue;
-            }
-
-            if (candidate.previousFrameId >= reusableFutureFrameId) {
-                reusableFutureFrameId = candidate.previousFrameId;
-                reusableFutureTargetIndex = i;
+        uint32_t outputIndex = UINT32_MAX;
+        for (uint32_t i = 0; i < ncnnOutputBuffers.size(); ++i) {
+            const auto& output = ncnnOutputBuffers[i];
+            if (output.gpuBuffer != VK_NULL_HANDLE &&
+                output.size >= ncnnDisplayBufferSize &&
+                !output.ready &&
+                !output.inUseByInference &&
+                !output.inUseByGraphics) {
+                outputIndex = i;
+                break;
             }
         }
 
-        if (reusableFutureTargetIndex < ncnnInterpolationTargets.size()) {
-            outputIndex = ncnnInterpolationTargets[reusableFutureTargetIndex].outputIndex;
-            dropInterpolationTarget(reusableFutureTargetIndex, "dropped to free NCNN output buffer for earlier target");
-        }
-    }
+        if (outputIndex == UINT32_MAX) {
+            uint32_t reusableFutureTargetIndex = UINT32_MAX;
+            uint64_t reusableFutureFrameId = 0;
+            for (uint32_t i = 0; i < ncnnInterpolationTargets.size(); ++i) {
+                const auto& candidate = ncnnInterpolationTargets[i];
+                if (candidate.state != InterpolationTargetState::Ready ||
+                    candidate.outputIndex >= ncnnOutputBuffers.size() ||
+                    candidate.previousFrameId <= ncnnInterpolationTargets[targetIndex].previousFrameId) {
+                    continue;
+                }
 
-    if (outputIndex == UINT32_MAX) {
-        logNcnnOutputBufferStates("no-free-buffer");
-        return false;
-    }
+                const auto& output = ncnnOutputBuffers[candidate.outputIndex];
+                if (output.inUseByGraphics || output.inUseByInference) {
+                    continue;
+                }
 
-    auto& target = ncnnInterpolationTargets[targetIndex];
-    const uint32_t prevIndex = target.previousSourceIndex;
-    const uint32_t currIndex = target.currentSourceIndex;
-    const uint64_t prevFrameId = target.previousFrameId;
-    const uint64_t currFrameId = target.currentFrameId;
-    if (prevIndex >= offscreenFrames.size() ||
-        currIndex >= offscreenFrames.size() ||
-        offscreenFrames[prevIndex].debugFrameId != prevFrameId ||
-        offscreenFrames[currIndex].debugFrameId != currFrameId) {
-        dropInterpolationTarget(targetIndex, "source offscreen slot was overwritten before inference");
-        return false;
-    }
-    const VkImage prevImage = offscreenFrames[prevIndex].image;
-    const VkImageView prevImageView = offscreenFrames[prevIndex].ncnnInputImageView;
-    const VkDeviceMemory prevMemory = offscreenFrames[prevIndex].imageMemory;
-    const VkImage currImage = offscreenFrames[currIndex].image;
-    const VkImageView currImageView = offscreenFrames[currIndex].ncnnInputImageView;
-    const VkDeviceMemory currMemory = offscreenFrames[currIndex].imageMemory;
-    const VkFormat inputFormat =
-        swapChainImageFormat == VK_FORMAT_B8G8R8A8_SRGB ? VK_FORMAT_B8G8R8A8_UNORM :
-        swapChainImageFormat == VK_FORMAT_R8G8B8A8_SRGB ? VK_FORMAT_R8G8B8A8_UNORM :
-        swapChainImageFormat;
-    const VkBuffer outBuffer = ncnnOutputBuffers[outputIndex].gpuBuffer;
-    const VkDeviceMemory outMemory = ncnnOutputBuffers[outputIndex].gpuMemory;
-    const VkDeviceSize outSize = ncnnOutputBuffers[outputIndex].size;
-    const int inputW = static_cast<int>(swapChainExtent.width);
-    const int inputH = static_cast<int>(swapChainExtent.height);
-    const int divisor = std::clamp(
-        ncnnPresentationState.ncnnInferenceScaleDivisor,
-        NCNN_MIN_INFERENCE_SCALE_DIVISOR,
-        NCNN_MAX_INFERENCE_SCALE_DIVISOR
-    );
-    const int inferenceW = std::min(inputW, std::max(32, inputW / divisor));
-    const int inferenceH = std::min(inputH, std::max(32, inputH / divisor));
+                if (candidate.previousFrameId >= reusableFutureFrameId) {
+                    reusableFutureFrameId = candidate.previousFrameId;
+                    reusableFutureTargetIndex = i;
+                }
+            }
 
-    ncnnPresentationState.ncnnInferenceInFlight = true;
-    ncnnPresentationState.asyncNcnnPrevFrameIndex = prevIndex;
-    ncnnPresentationState.asyncNcnnCurrFrameIndex = currIndex;
-    ncnnPresentationState.asyncNcnnOutputIndex = outputIndex;
-    ncnnOutputBuffers[outputIndex].inUseByInference = true;
-    ncnnOutputBuffers[outputIndex].ready = false;
-    ncnnOutputBuffers[outputIndex].sequence = 0;
-    ncnnOutputBuffers[outputIndex].debugPreviousFrameId = prevFrameId;
-    ncnnOutputBuffers[outputIndex].debugCurrentFrameId = currFrameId;
-    ncnnPresentationState.hasNcnnGpuFramePair = false;
-    ncnnPresentationState.ncnnHeldSourceDisplayIndex = prevIndex;
-    ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
-    target.state = InterpolationTargetState::Running;
-    target.outputIndex = outputIndex;
-
-    asyncNcnnInference = std::async(std::launch::async, [this,
-                                                         prevImage,
-                                                         prevImageView,
-                                                         prevMemory,
-                                                         currImage,
-                                                         currImageView,
-                                                         currMemory,
-                                                         inputFormat,
-                                                         outBuffer,
-                                                         outMemory,
-                                                         outSize,
-                                                         inputW,
-                                                         inputH,
-                                                         inferenceW,
-                                                         inferenceH,
-                                                         currIndex,
-                                                         outputIndex,
-                                                         prevIndex,
-                                                         prevFrameId,
-                                                         currFrameId,
-                                                         targetIndex]() {
-        AsyncNcnnResult result{};
-        result.inputW = inputW;
-        result.inputH = inputH;
-        result.inferenceW = inferenceW;
-        result.inferenceH = inferenceH;
-        result.outputIndex = outputIndex;
-        result.currentSourceIndex = currIndex;
-        result.previousSourceIndex = prevIndex;
-        result.previousFrameId = prevFrameId;
-        result.currentFrameId = currFrameId;
-        result.interpolationTargetIndex = targetIndex;
-
-        const auto start = std::chrono::high_resolution_clock::now();
-
-        const auto processFrames = [&]() {
-            return ncnnFrameInterpolator.processGpuRgbaFrames(
-                prevImage,
-                prevImageView,
-                prevMemory,
-                currImage,
-                currImageView,
-                currMemory,
-                inputFormat,
-                outBuffer,
-                outMemory,
-                outSize,
-                inputW,
-                inputH,
-                inferenceW,
-                inferenceH,
-                0.5f
-            );
-        };
-
-        if (ncnnCanRunWithoutQueueMutex) {
-            result.processRet = processFrames();
-        }
-        else {
-            std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
-            result.processRet = processFrames();
+            if (reusableFutureTargetIndex < ncnnInterpolationTargets.size()) {
+                outputIndex = ncnnInterpolationTargets[reusableFutureTargetIndex].outputIndex;
+                dropInterpolationTarget(reusableFutureTargetIndex, "dropped to free NCNN output buffer for earlier target");
+            }
         }
 
-        result.inferenceMs = std::chrono::duration<double, std::milli>(
-            std::chrono::high_resolution_clock::now() - start).count();
-        return result;
-    });
+        if (outputIndex == UINT32_MAX) {
+            logNcnnOutputBufferStates("no-free-buffer");
+            break;
+        }
 
-    return true;
+        auto& target = ncnnInterpolationTargets[targetIndex];
+        const uint32_t prevIndex = target.previousSourceIndex;
+        const uint32_t currIndex = target.currentSourceIndex;
+        const uint64_t prevFrameId = target.previousFrameId;
+        const uint64_t currFrameId = target.currentFrameId;
+        if (prevIndex >= offscreenFrames.size() ||
+            currIndex >= offscreenFrames.size() ||
+            offscreenFrames[prevIndex].debugFrameId != prevFrameId ||
+            offscreenFrames[currIndex].debugFrameId != currFrameId) {
+            dropInterpolationTarget(targetIndex, "source offscreen slot was overwritten before inference");
+            continue;
+        }
+
+        const VkImage prevImage = offscreenFrames[prevIndex].image;
+        const VkImageView prevImageView = offscreenFrames[prevIndex].ncnnInputImageView;
+        const VkDeviceMemory prevMemory = offscreenFrames[prevIndex].imageMemory;
+        const VkImage currImage = offscreenFrames[currIndex].image;
+        const VkImageView currImageView = offscreenFrames[currIndex].ncnnInputImageView;
+        const VkDeviceMemory currMemory = offscreenFrames[currIndex].imageMemory;
+        const VkFormat inputFormat =
+            swapChainImageFormat == VK_FORMAT_B8G8R8A8_SRGB ? VK_FORMAT_B8G8R8A8_UNORM :
+            swapChainImageFormat == VK_FORMAT_R8G8B8A8_SRGB ? VK_FORMAT_R8G8B8A8_UNORM :
+            swapChainImageFormat;
+        const VkBuffer outBuffer = ncnnOutputBuffers[outputIndex].gpuBuffer;
+        const VkDeviceMemory outMemory = ncnnOutputBuffers[outputIndex].gpuMemory;
+        const VkDeviceSize outSize = ncnnOutputBuffers[outputIndex].size;
+        const int inputW = static_cast<int>(swapChainExtent.width);
+        const int inputH = static_cast<int>(swapChainExtent.height);
+        const int divisor = std::clamp(
+            ncnnPresentationState.ncnnInferenceScaleDivisor,
+            NCNN_MIN_INFERENCE_SCALE_DIVISOR,
+            NCNN_MAX_INFERENCE_SCALE_DIVISOR
+        );
+        const int inferenceW = std::min(inputW, std::max(32, inputW / divisor));
+        const int inferenceH = std::min(inputH, std::max(32, inputH / divisor));
+
+        ncnnOutputBuffers[outputIndex].inUseByInference = true;
+        ncnnOutputBuffers[outputIndex].ready = false;
+        ncnnOutputBuffers[outputIndex].sequence = 0;
+        ncnnOutputBuffers[outputIndex].debugPreviousFrameId = prevFrameId;
+        ncnnOutputBuffers[outputIndex].debugCurrentFrameId = currFrameId;
+        ncnnPresentationState.hasNcnnGpuFramePair = false;
+        ncnnPresentationState.ncnnHeldSourceDisplayIndex = prevIndex;
+        ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
+        target.state = InterpolationTargetState::Running;
+        target.outputIndex = outputIndex;
+        ++runningCount;
+        --pendingCount;
+        startedAny = true;
+        ncnnPresentationState.ncnnRunningJobCount = runningCount;
+
+        target.future = std::async(std::launch::async, [this,
+                                                        prevImage,
+                                                        prevImageView,
+                                                        prevMemory,
+                                                        currImage,
+                                                        currImageView,
+                                                        currMemory,
+                                                        inputFormat,
+                                                        outBuffer,
+                                                        outMemory,
+                                                        outSize,
+                                                        inputW,
+                                                        inputH,
+                                                        inferenceW,
+                                                        inferenceH,
+                                                        currIndex,
+                                                        outputIndex,
+                                                        prevIndex,
+                                                        prevFrameId,
+                                                        currFrameId,
+                                                        targetIndex]() {
+            AsyncNcnnResult result{};
+            result.inputW = inputW;
+            result.inputH = inputH;
+            result.inferenceW = inferenceW;
+            result.inferenceH = inferenceH;
+            result.outputIndex = outputIndex;
+            result.currentSourceIndex = currIndex;
+            result.previousSourceIndex = prevIndex;
+            result.previousFrameId = prevFrameId;
+            result.currentFrameId = currFrameId;
+            result.interpolationTargetIndex = targetIndex;
+
+            const auto start = std::chrono::high_resolution_clock::now();
+
+            const auto processFrames = [&]() {
+                const auto processStart = std::chrono::high_resolution_clock::now();
+                const int processRet = ncnnFrameInterpolator.processGpuRgbaFrames(
+                    prevImage,
+                    prevImageView,
+                    prevMemory,
+                    currImage,
+                    currImageView,
+                    currMemory,
+                    inputFormat,
+                    outBuffer,
+                    outMemory,
+                    outSize,
+                    inputW,
+                    inputH,
+                    inferenceW,
+                    inferenceH,
+                    0.5f
+                );
+                result.rifeProcessMs = std::chrono::duration<double, std::milli>(
+                    std::chrono::high_resolution_clock::now() - processStart).count();
+                return processRet;
+            };
+
+            if (MAX_NCNN_IN_FLIGHT == 1 && ncnnCanRunWithoutQueueMutex) {
+                result.processRet = processFrames();
+            }
+            else {
+                const auto queueWaitStart = std::chrono::high_resolution_clock::now();
+                std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
+                result.queueWaitMs = std::chrono::duration<double, std::milli>(
+                    std::chrono::high_resolution_clock::now() - queueWaitStart).count();
+                result.processRet = processFrames();
+            }
+
+            result.inferenceMs = std::chrono::duration<double, std::milli>(
+                std::chrono::high_resolution_clock::now() - start).count();
+            return result;
+        });
+    }
+
+    return startedAny;
 }
 #endif

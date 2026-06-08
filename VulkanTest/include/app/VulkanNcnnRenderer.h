@@ -178,9 +178,6 @@ private:
     double lastFrameCaptureProcessMs = 0.0;
     double lastFramePairCaptureProcessMs = 0.0;
     VkDeviceSize ncnnDisplayBufferSize = 0;
-#if HAS_NCNN
-    std::future<AsyncNcnnResult> asyncNcnnInference;
-#endif
 
     bool framebufferResized = false;
 

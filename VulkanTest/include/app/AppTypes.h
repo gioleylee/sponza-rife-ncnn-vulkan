@@ -27,7 +27,8 @@ inline constexpr double NCNN_TARGET_INFERENCE_MS = 10.0;
 inline constexpr double NCNN_FAST_INFERENCE_MS = 6.0;
 inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 6;
 inline constexpr uint32_t NCNN_OUTPUT_BUFFER_COUNT = 3;
-// Keep the default single-worker until the NCNN/RIFE wrapper is made per-worker safe.
+// Keep the async queue shallow until the NCNN/RIFE wrapper is proven safe at
+// higher concurrency.
 inline constexpr uint32_t MAX_NCNN_IN_FLIGHT = 2;
 
 inline const std::vector<const char*> deviceExtensions = {

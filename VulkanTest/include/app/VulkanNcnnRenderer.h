@@ -293,25 +293,15 @@ private:
 
     void resetFrameInterpolationDebugState();
 
-    const char* presentationCommandModeName(PresentationCommandMode mode) const;
-
-    std::string describeOffscreenSlotBlocker(uint32_t slot) const;
-
-    void logOffscreenFrameMap() const;
-
     std::string debugRealFrameLabel(uint64_t frameId) const;
 
     std::string debugInterpolatedFrameLabel(uint64_t previousFrameId) const;
 
     bool isDebugRealFramePresented(uint64_t frameId) const;
 
-    std::string buildDebugPresentQueue(PresentationCommandMode mode, bool canRenderSourceFrame) const;
-
     uint32_t findEarliestUnpresentedRealFrameSlot() const;
 
     uint32_t findReadyInterpolatedOutputForPreviousFrame(uint64_t previousFrameId) const;
-
-    std::string debugTimelineStepLabel(int64_t timelineStep) const;
 
     const char* interpolationTargetStateName(InterpolationTargetState state) const;
 
@@ -330,12 +320,6 @@ private:
     void dropInterpolationTarget(uint32_t targetIndex, const std::string& reason);
 
     void releaseObsoleteNcnnOutputBuffers();
-
-    void logNcnnOutputBufferStates(const char* context) const;
-
-    void logDebugPresentState(PresentationCommandMode mode, bool canRenderSourceFrame, const std::string& actualChosen) const;
-
-    void logDebugPresentQueue(const char* phase, PresentationCommandMode mode, bool canRenderSourceFrame) const;
 
     void markDebugRealFramePresented(uint32_t sourceIndex);
 

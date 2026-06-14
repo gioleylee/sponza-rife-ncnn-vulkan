@@ -776,7 +776,6 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
         ncnnPresentationState.hasNcnnDisplayFrame = true;
         ++readyCount;
 
-        logNcnnOutputBufferStates("ready");
         if (previousDivisor != ncnnPresentationState.ncnnInferenceScaleDivisor || (ncnnPresentationState.ncnnCompletedInferenceCount % 120) == 1) {
             std::cout << "[NCNN] display=" << result.inputW << "x" << result.inputH
                       << ", rife_input=" << result.inferenceW << "x" << result.inferenceH
@@ -792,7 +791,6 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
 
 bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
     releaseObsoleteNcnnOutputBuffers();
-    logNcnnOutputBufferStates("before-submit");
 
     if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled) {
         return false;
@@ -884,7 +882,6 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         }
 
         if (outputIndex == UINT32_MAX) {
-            logNcnnOutputBufferStates("no-free-buffer");
             break;
         }
 

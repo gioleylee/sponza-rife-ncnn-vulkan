@@ -97,6 +97,8 @@ private:
     VkFormat swapChainImageFormat = VK_FORMAT_UNDEFINED;
     VkExtent2D swapChainExtent{};
     std::vector<VkImageView> swapChainImageViews;
+    VkRenderPass imguiRenderPass = VK_NULL_HANDLE;
+    std::vector<VkFramebuffer> imguiFramebuffers;
     std::vector<VkFramebuffer> offscreenFramebuffers;
 
     std::vector<VkImage> gNormalImages;
@@ -215,6 +217,11 @@ private:
     bool vKeyPressed = false;
     bool showSpecular = false;
     bool mKeyPressed = false;
+    bool markInterpolatedFrames = false;
+    bool yKeyPressed = false;
+    bool imguiVisible = false;
+    bool rightMousePressed = false;
+    bool imguiInitialized = false;
 
     bool autoPanEnabled = false;
     bool tKeyPressed = false;
@@ -250,6 +257,8 @@ private:
     void initializeDescriptorResources();
 
     void initializeCommandResources();
+
+    void initializeImGuiResources();
 
     void initializeSyncResources();
 
@@ -288,6 +297,18 @@ private:
     void createUniformBuffers();
 
 #include "VulkanHelpers.h"
+
+    void createImGuiRenderPass();
+
+    void createImGuiFramebuffers();
+
+    void cleanupImGuiFramebuffers();
+
+    void cleanupImGui();
+
+    void beginImGuiFrame();
+
+    void renderImGuiOverlay(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     void copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex, uint32_t offscreenSlot);
 

@@ -89,6 +89,7 @@ void VulkanNcnnRenderer::initVulkan() {
     initializeSwapchainResources();
     initializeRenderResources();
     initializeCommandResources();
+    initializeImGuiResources();
     initializeSceneResources();
     initializeDescriptorResources();
     initializeSyncResources();
@@ -184,6 +185,7 @@ void VulkanNcnnRenderer::cleanup() {
     waitForAsyncNcnnInference();
     shutdownNcnn();
 #endif
+    cleanupImGui();
     cleanupSwapChain();
 
     cleanupRenderPipelines();
@@ -695,6 +697,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
 
     if (mode == PresentationCommandMode::DisplayInterpolatedFrame) {
         displayNcnnFrameOnSwapchain(commandBuffer, imageIndex);
+        renderImGuiOverlay(commandBuffer, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -705,6 +708,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
 
     if (mode == PresentationCommandMode::DisplayCapturedSourceFrame) {
         displayCapturedNcnnSourceOnSwapchain(commandBuffer, imageIndex);
+        renderImGuiOverlay(commandBuffer, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -715,6 +719,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
 
     if (mode == PresentationCommandMode::DisplayHeldSourceFrame) {
         displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnHeldSourceDisplayIndex);
+        renderImGuiOverlay(commandBuffer, imageIndex);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -917,6 +922,8 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
         }
 #endif
     }
+
+    renderImGuiOverlay(commandBuffer, imageIndex);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");
@@ -1235,6 +1242,8 @@ void VulkanNcnnRenderer::drawFrame() {
     if (mode == PresentationCommandMode::RenderFrame) {
         updateUniformBuffer(frameSlot);
     }
+
+    beginImGuiFrame();
 
     // One scheduler tick records exactly one frame source, submits it, then queues exactly one present.
     const uint32_t capturedNcnnSlot = recordMainRenderCommands(frameSlot, imageIndex, mode);

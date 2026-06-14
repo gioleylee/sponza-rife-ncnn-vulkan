@@ -40,6 +40,8 @@ void displayCapturedNcnnSourceOnSwapchain(VkCommandBuffer commandBuffer, uint32_
 #if HAS_NCNN
 void waitForAsyncNcnnInference();
 
+void setNcnnRealtimeInterpolationEnabled(bool enabled);
+
 void pollAsyncNcnnInference();
 
 bool submitAsyncNcnnInferenceIfReady();

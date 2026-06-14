@@ -11,6 +11,9 @@
 
 namespace {
 
+constexpr uint32_t INTERPOLATED_FRAME_MARKER_MIN_WIDTH = 24;
+constexpr uint32_t INTERPOLATED_FRAME_MARKER_WIDTH_DIVISOR = 40;
+
 void resetNcnnDisplayState(NcnnPresentationState& state) {
     state.hasNcnnDisplayFrame = false;
     state.nextNcnnOutputSequence = 1;
@@ -551,25 +554,61 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
         nullptr
     );
 
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = { 0, 0, 0 };
-    region.imageExtent = { swapChainExtent.width, swapChainExtent.height, 1 };
+    uint32_t markerWidth = 0;
+    if (markInterpolatedFrames) {
+        markerWidth = std::min(
+            std::max(
+                INTERPOLATED_FRAME_MARKER_MIN_WIDTH,
+                swapChainExtent.width / INTERPOLATED_FRAME_MARKER_WIDTH_DIVISOR),
+            swapChainExtent.width);
 
-    vkCmdCopyBufferToImage(
-        commandBuffer,
-        sourceBuffer,
-        swapChainImages[imageIndex],
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1,
-        &region
-    );
+        VkClearColorValue markerColor{};
+        markerColor.float32[0] = 0.0f;
+        markerColor.float32[1] = 1.0f;
+        markerColor.float32[2] = 0.0f;
+        markerColor.float32[3] = 1.0f;
+
+        VkImageSubresourceRange markerSubresource{};
+        markerSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        markerSubresource.baseMipLevel = 0;
+        markerSubresource.levelCount = 1;
+        markerSubresource.baseArrayLayer = 0;
+        markerSubresource.layerCount = 1;
+
+        // Clear first, then copy the interpolated image over everything except
+        // the left marker strip. The marker never feeds back into frame history.
+        vkCmdClearColorImage(
+            commandBuffer,
+            swapChainImages[imageIndex],
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            &markerColor,
+            1,
+            &markerSubresource
+        );
+    }
+
+    const uint32_t copyWidth = swapChainExtent.width - markerWidth;
+    if (copyWidth > 0) {
+        VkBufferImageCopy region{};
+        region.bufferOffset = static_cast<VkDeviceSize>(markerWidth) * 4;
+        region.bufferRowLength = swapChainExtent.width;
+        region.bufferImageHeight = swapChainExtent.height;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = { static_cast<int32_t>(markerWidth), 0, 0 };
+        region.imageExtent = { copyWidth, swapChainExtent.height, 1 };
+
+        vkCmdCopyBufferToImage(
+            commandBuffer,
+            sourceBuffer,
+            swapChainImages[imageIndex],
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &region
+        );
+    }
 
     VkImageMemoryBarrier backToPresentBarrier{};
     backToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -669,6 +708,49 @@ void VulkanNcnnRenderer::displayCapturedNcnnSourceOnSwapchain(VkCommandBuffer co
 }
 
 #if HAS_NCNN
+void VulkanNcnnRenderer::setNcnnRealtimeInterpolationEnabled(bool enabled) {
+    if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled == enabled) {
+        return;
+    }
+
+    waitForAsyncNcnnInference();
+
+    if (enabled) {
+        ncnnPresentationState = NcnnPresentationState{};
+        ncnnPresentationState.ncnnRealtimeInterpolationEnabled = true;
+    }
+    else {
+        ncnnPresentationState.ncnnRealtimeInterpolationEnabled = false;
+        ncnnPresentationState.hasNcnnGpuFramePair = false;
+        ncnnPresentationState.currentNcnnGpuFrameIndex = UINT32_MAX;
+        ncnnPresentationState.previousNcnnGpuFrameIndex = UINT32_MAX;
+        ncnnPresentationState.hasNcnnDisplayFrame = false;
+        ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
+        ncnnPresentationState.ncnnPendingSourceDisplayIndex = UINT32_MAX;
+        ncnnPresentationState.ncnnHeldSourceDisplayIndex = UINT32_MAX;
+        ncnnPresentationState.ncnnLastPresentedSourceIndex = UINT32_MAX;
+        ncnnPresentationState.ncnnRenderAheadPending = false;
+        ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
+    }
+
+    for (auto& output : ncnnOutputBuffers) {
+        if (!output.inUseByInference) {
+            output.ready = false;
+            output.sequence = 0;
+        }
+    }
+
+    capturedFrameCount = 0;
+    previousFrameCaptureProcessMs = 0.0;
+    lastFrameCaptureProcessMs = 0.0;
+    lastFramePairCaptureProcessMs = 0.0;
+    resetFrameInterpolationDebugState();
+
+    std::cout << "[NCNN] realtime interpolation "
+              << (ncnnPresentationState.ncnnRealtimeInterpolationEnabled ? "enabled" : "disabled")
+              << std::endl;
+}
+
 void VulkanNcnnRenderer::waitForAsyncNcnnInference() {
     for (uint32_t targetIndex = 0; targetIndex < ncnnInterpolationTargets.size(); ++targetIndex) {
         auto& target = ncnnInterpolationTargets[targetIndex];

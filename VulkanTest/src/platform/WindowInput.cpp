@@ -61,6 +61,15 @@ void VulkanNcnnRenderer::processInput(float deltaTime) {
         cameraPos.y -= velocity;
     }
 
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+        if (!rightMousePressed) {
+            imguiVisible = !imguiVisible;
+            rightMousePressed = true;
+        }
+    } else {
+        rightMousePressed = false;
+    }
+
     if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {
         if (!nKeyPressed) {
             showNormals = !showNormals;
@@ -97,45 +106,22 @@ void VulkanNcnnRenderer::processInput(float deltaTime) {
         mKeyPressed = false;
     }
 
+    if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS) {
+        if (!yKeyPressed) {
+            markInterpolatedFrames = !markInterpolatedFrames;
+            std::cout << "[NCNN] interpolated frame marker "
+                      << (markInterpolatedFrames ? "enabled" : "disabled")
+                      << std::endl;
+            yKeyPressed = true;
+        }
+    } else {
+        yKeyPressed = false;
+    }
+
 #if HAS_NCNN
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (!rKeyPressed) {
-            const bool enableNcnnInterpolation = !ncnnPresentationState.ncnnRealtimeInterpolationEnabled;
-
-            if (enableNcnnInterpolation) {
-                waitForAsyncNcnnInference();
-                ncnnPresentationState = NcnnPresentationState{};
-                ncnnPresentationState.ncnnRealtimeInterpolationEnabled = true;
-            }
-            else {
-                waitForAsyncNcnnInference();
-                ncnnPresentationState.ncnnRealtimeInterpolationEnabled = false;
-                ncnnPresentationState.hasNcnnGpuFramePair = false;
-                ncnnPresentationState.currentNcnnGpuFrameIndex = UINT32_MAX;
-                ncnnPresentationState.previousNcnnGpuFrameIndex = UINT32_MAX;
-                ncnnPresentationState.hasNcnnDisplayFrame = false;
-                ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
-                ncnnPresentationState.ncnnPendingSourceDisplayIndex = UINT32_MAX;
-                ncnnPresentationState.ncnnHeldSourceDisplayIndex = UINT32_MAX;
-                ncnnPresentationState.ncnnLastPresentedSourceIndex = UINT32_MAX;
-                ncnnPresentationState.ncnnRenderAheadPending = false;
-                ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
-            }
-
-            for (auto& output : ncnnOutputBuffers) {
-                if (!output.inUseByInference) {
-                    output.ready = false;
-                    output.sequence = 0;
-                }
-            }
-            capturedFrameCount = 0;
-            previousFrameCaptureProcessMs = 0.0;
-            lastFrameCaptureProcessMs = 0.0;
-            lastFramePairCaptureProcessMs = 0.0;
-            resetFrameInterpolationDebugState();
-            std::cout << "[NCNN] realtime interpolation "
-                      << (ncnnPresentationState.ncnnRealtimeInterpolationEnabled ? "enabled" : "disabled")
-                      << std::endl;
+            setNcnnRealtimeInterpolationEnabled(!ncnnPresentationState.ncnnRealtimeInterpolationEnabled);
             rKeyPressed = true;
         }
     } else {

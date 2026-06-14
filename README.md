@@ -9,9 +9,11 @@ This project is a Vulkan-based Sponza renderer with NCNN-backed real-time frame 
 ### Controls
 - Key Inputs:
   - "R": Toggle Frame Interpolation (ON/OFF)
+  - "Y": Toggle green marker on interpolated frames (ON/OFF)
   - "T": Auto-rotate Camera (ON/OFF)
   - "1": Speeds up auto-rotate (if enabled)
   - "2": Slows down auto-rotate (if enabled)
+  - Right mouse click: Toggle ImGui feature panel
 
 ### Required Tools
 

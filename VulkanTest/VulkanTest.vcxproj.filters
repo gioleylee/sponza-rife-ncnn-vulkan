@@ -5,69 +5,129 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
-    </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
     <Filter Include="Source Files\App">
       <UniqueIdentifier>{B59AC588-2B79-4976-BDB3-9618E74674CE}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\Platform">
-      <UniqueIdentifier>{88DE2760-7FA7-40FE-91F4-6CD00C3DC903}</UniqueIdentifier>
+    <Filter Include="Source Files\App\Core">
+      <UniqueIdentifier>{F75461AE-806A-47A0-AF08-FE9BA8638B83}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\App\Frame Interpolation">
+      <UniqueIdentifier>{839B8533-9385-402D-A627-99EA6B37B9E3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\App\Resources">
+      <UniqueIdentifier>{BCA936CC-79E8-4B8E-8E83-C40CF6D00E0E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\App\Scene">
+      <UniqueIdentifier>{3A44A47A-02DD-418E-9DE4-0C9C32C67A45}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\App\UI">
+      <UniqueIdentifier>{9EAB9D04-AE4E-4E99-AFF1-3109D8063D83}</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\NCNN">
       <UniqueIdentifier>{01CB081D-0D40-4828-BBA8-9321AF01EA3D}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Platform">
+      <UniqueIdentifier>{88DE2760-7FA7-40FE-91F4-6CD00C3DC903}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4B04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
     <Filter Include="Header Files\App">
       <UniqueIdentifier>{C39F3C18-D7C7-426E-9947-971393C950E4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\App\Core">
+      <UniqueIdentifier>{2FC520A5-931B-48D9-A1A3-C2D8366842B7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\App\Frame Interpolation">
+      <UniqueIdentifier>{7B05D842-79DC-4EAC-98A6-302CB9A49219}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\App\Resources">
+      <UniqueIdentifier>{FF5CD9D7-7714-406E-8E0D-DB28D4F0A872}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\App\Scene">
+      <UniqueIdentifier>{8D257660-C9E2-4E39-B459-F97052AD644C}</UniqueIdentifier>
     </Filter>
     <Filter Include="Header Files\Platform">
       <UniqueIdentifier>{1D7FFACF-619F-41E0-9E11-7E239425C8E2}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Third Party\NCNN Interpolation">
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4C08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Resource Files\Shaders">
+      <UniqueIdentifier>{AB01D9B7-8D5D-41FD-B753-6B38F5374772}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resource Files\Shaders\Deferred">
+      <UniqueIdentifier>{E14CB25A-0035-422D-942A-86390DE375AA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resource Files\Shaders\Forward">
+      <UniqueIdentifier>{56925FB9-3FBA-4BF0-BE51-8C8847CFB615}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resource Files\Shaders\Skinned">
+      <UniqueIdentifier>{4DF62D57-2C86-4D27-9DFD-C3B49FEA58D5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Documentation">
+      <UniqueIdentifier>{FD24CBB2-13D0-481E-9CEF-EFC92727D4E7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Third Party">
+      <UniqueIdentifier>{417635F2-591A-414E-9175-4CE6D4F6C818}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Third Party\ImGui">
+      <UniqueIdentifier>{25C2FF14-03D0-4B2D-B8CF-F53907E23F3F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Third Party\ImGui\Backends">
+      <UniqueIdentifier>{53BC0152-9148-42D5-BB78-C2F898B4CB02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Third Party\ImGui\Core">
+      <UniqueIdentifier>{3B2480C5-17F5-4F11-A701-53F157B18C7E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Third Party\RIFE">
       <UniqueIdentifier>{8F08E9CB-E54A-4864-AF4B-DFDC9FC2AA07}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Third Party\Single Header Libraries">
+      <UniqueIdentifier>{0E0E3953-C578-48EB-89B9-48B3C9C1E4D8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\ncnn\NcnnFrameInterpolator.cpp">
-      <Filter>Source Files\NCNN</Filter>
-    </ClCompile>
     <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\app\DescriptorResources.cpp">
-      <Filter>Source Files\App</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\ModelLoader.cpp">
-      <Filter>Source Files\App</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\RenderResources.cpp">
-      <Filter>Source Files\App</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\NcnnIntegration.cpp">
-      <Filter>Source Files\App</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\Swapchain.cpp">
-      <Filter>Source Files\App</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\TextureLoader.cpp">
-      <Filter>Source Files\App</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\VulkanBuffers.cpp">
-      <Filter>Source Files\App</Filter>
+    <ClCompile Include="src\app\VulkanNcnnRenderer.cpp">
+      <Filter>Source Files\App\Core</Filter>
     </ClCompile>
     <ClCompile Include="src\app\VulkanDevice.cpp">
-      <Filter>Source Files\App</Filter>
+      <Filter>Source Files\App\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\Swapchain.cpp">
+      <Filter>Source Files\App\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\NcnnIntegration.cpp">
+      <Filter>Source Files\App\Frame Interpolation</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\DescriptorResources.cpp">
+      <Filter>Source Files\App\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\RenderResources.cpp">
+      <Filter>Source Files\App\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\TextureLoader.cpp">
+      <Filter>Source Files\App\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\VulkanBuffers.cpp">
+      <Filter>Source Files\App\Resources</Filter>
     </ClCompile>
     <ClCompile Include="src\app\VulkanHelpers.cpp">
-      <Filter>Source Files\App</Filter>
+      <Filter>Source Files\App\Resources</Filter>
     </ClCompile>
-    <ClCompile Include="src\app\VulkanNcnnRenderer.cpp">
-      <Filter>Source Files\App</Filter>
+    <ClCompile Include="src\app\ModelLoader.cpp">
+      <Filter>Source Files\App\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\ImGuiOverlay.cpp">
+      <Filter>Source Files\App\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ncnn\NcnnFrameInterpolator.cpp">
+      <Filter>Source Files\NCNN</Filter>
     </ClCompile>
     <ClCompile Include="src\platform\WindowInput.cpp">
       <Filter>Source Files\Platform</Filter>
@@ -75,64 +135,61 @@
     <ClCompile Include="src\platform\validation_layers.cpp">
       <Filter>Source Files\Platform</Filter>
     </ClCompile>
+    <ClCompile Include="third_party\imgui_impl_vulkan.cpp">
+      <Filter>Third Party\ImGui\Backends</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\projects\libraries\include\imgui\imgui_impl_glfw.cpp">
+      <Filter>Third Party\ImGui\Backends</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\projects\libraries\include\imgui\imgui.cpp">
+      <Filter>Third Party\ImGui\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\projects\libraries\include\imgui\imgui_draw.cpp">
+      <Filter>Third Party\ImGui\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\projects\libraries\include\imgui\imgui_tables.cpp">
+      <Filter>Third Party\ImGui\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\projects\libraries\include\imgui\imgui_widgets.cpp">
+      <Filter>Third Party\ImGui\Core</Filter>
+    </ClCompile>
     <ClCompile Include="third_party\rife\rife.cpp">
-      <Filter>Third Party\NCNN Interpolation</Filter>
+      <Filter>Third Party\RIFE</Filter>
     </ClCompile>
     <ClCompile Include="third_party\rife\warp.cpp">
-      <Filter>Third Party\NCNN Interpolation</Filter>
+      <Filter>Third Party\RIFE</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\shader.frag">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="shaders\shader.vert">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="shaders\deferred.frag">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="shaders\deferred.vert">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="shaders\compile.bat">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="shaders\skinned.vert">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="shaders\skinned.vert.spv">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="ncnn_setup.md" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="include\app\NcnnFrameInterpolator.h">
-      <Filter>Header Files\App</Filter>
+    <ClInclude Include="include\app\AppTypes.h">
+      <Filter>Header Files\App\Core</Filter>
     </ClInclude>
     <ClInclude Include="include\app\VulkanNcnnRenderer.h">
-      <Filter>Header Files\App</Filter>
+      <Filter>Header Files\App\Core</Filter>
     </ClInclude>
-    <ClInclude Include="include\app\VulkanHelpers.h">
-      <Filter>Header Files\App</Filter>
-    </ClInclude>
-    <ClInclude Include="include\app\TextureLoader.h">
-      <Filter>Header Files\App</Filter>
-    </ClInclude>
-    <ClInclude Include="include\app\ModelLoader.h">
-      <Filter>Header Files\App</Filter>
-    </ClInclude>
-    <ClInclude Include="include\app\RenderResources.h">
-      <Filter>Header Files\App</Filter>
+    <ClInclude Include="include\app\NcnnFrameInterpolator.h">
+      <Filter>Header Files\App\Frame Interpolation</Filter>
     </ClInclude>
     <ClInclude Include="include\app\NcnnIntegration.h">
-      <Filter>Header Files\App</Filter>
+      <Filter>Header Files\App\Frame Interpolation</Filter>
     </ClInclude>
     <ClInclude Include="include\app\DescriptorResources.h">
-      <Filter>Header Files\App</Filter>
+      <Filter>Header Files\App\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\RenderResources.h">
+      <Filter>Header Files\App\Resources</Filter>
     </ClInclude>
     <ClInclude Include="include\app\Swapchain.h">
-      <Filter>Header Files\App</Filter>
+      <Filter>Header Files\App\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\TextureLoader.h">
+      <Filter>Header Files\App\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\VulkanHelpers.h">
+      <Filter>Header Files\App\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\ModelLoader.h">
+      <Filter>Header Files\App\Scene</Filter>
     </ClInclude>
     <ClInclude Include="include\platform\WindowInput.h">
       <Filter>Header Files\Platform</Filter>
@@ -140,17 +197,43 @@
     <ClInclude Include="include\platform\validation_layers.h">
       <Filter>Header Files\Platform</Filter>
     </ClInclude>
-    <ClInclude Include="third_party\rife\rife.h">
-      <Filter>Third Party\NCNN Interpolation</Filter>
+    <ClInclude Include="third_party\imgui_impl_vulkan.h">
+      <Filter>Third Party\ImGui\Backends</Filter>
     </ClInclude>
-    <ClInclude Include="include\app\AppTypes.h">
-      <Filter>Header Files\App</Filter>
+    <ClInclude Include="third_party\rife\rife.h">
+      <Filter>Third Party\RIFE</Filter>
     </ClInclude>
     <ClInclude Include="third_party\json.hpp">
-      <Filter>Header Files</Filter>
+      <Filter>Third Party\Single Header Libraries</Filter>
     </ClInclude>
     <ClInclude Include="third_party\tiny_gltf.h">
-      <Filter>Header Files</Filter>
+      <Filter>Third Party\Single Header Libraries</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ncnn_setup.md">
+      <Filter>Documentation</Filter>
+    </None>
+    <None Include="shaders\compile.bat">
+      <Filter>Resource Files\Shaders</Filter>
+    </None>
+    <None Include="shaders\deferred.frag">
+      <Filter>Resource Files\Shaders\Deferred</Filter>
+    </None>
+    <None Include="shaders\deferred.vert">
+      <Filter>Resource Files\Shaders\Deferred</Filter>
+    </None>
+    <None Include="shaders\shader.frag">
+      <Filter>Resource Files\Shaders\Forward</Filter>
+    </None>
+    <None Include="shaders\shader.vert">
+      <Filter>Resource Files\Shaders\Forward</Filter>
+    </None>
+    <None Include="shaders\skinned.vert">
+      <Filter>Resource Files\Shaders\Skinned</Filter>
+    </None>
+    <None Include="shaders\skinned.vert.spv">
+      <Filter>Resource Files\Shaders\Skinned</Filter>
+    </None>
   </ItemGroup>
 </Project>

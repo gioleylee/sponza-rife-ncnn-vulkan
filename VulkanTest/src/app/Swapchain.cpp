@@ -75,6 +75,8 @@ void VulkanNcnnRenderer::recreateSwapChain() {
 
     vkDeviceWaitIdle(device);
 
+    cleanupImGuiFramebuffers();
+
     for (auto semaphore : renderFinishedSemaphores) {
         vkDestroySemaphore(device, semaphore, nullptr);
     }
@@ -92,6 +94,7 @@ void VulkanNcnnRenderer::recreateSwapChain() {
         }
     }
     createImageViews();
+    createImGuiFramebuffers();
     createFrameProcessingResources();
     createDepthResources();
     createGBufferAttachments();
@@ -101,6 +104,7 @@ void VulkanNcnnRenderer::recreateSwapChain() {
 }
 
 void VulkanNcnnRenderer::cleanupSwapChain() {
+    cleanupImGuiFramebuffers();
     cleanupFramebuffers();
 
     if (lightingDescriptorPool) {

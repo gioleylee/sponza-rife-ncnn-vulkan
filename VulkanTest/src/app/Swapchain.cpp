@@ -96,6 +96,7 @@ void VulkanNcnnRenderer::recreateSwapChain() {
     createImageViews();
     createImGuiFramebuffers();
     createFrameProcessingResources();
+    initializeFrameProcessingImageLayouts();
     createDepthResources();
     createGBufferAttachments();
     createFramebuffers();

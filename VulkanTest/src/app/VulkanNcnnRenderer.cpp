@@ -154,6 +154,7 @@ void VulkanNcnnRenderer::initializeRenderResources() {
 
 void VulkanNcnnRenderer::initializeCommandResources() {
     createCommandPool();
+    initializeFrameProcessingImageLayouts();
 }
 
 void VulkanNcnnRenderer::initializeSceneResources() {

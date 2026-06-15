@@ -375,6 +375,18 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
     resetFrameInterpolationDebugState();
 }
 
+void VulkanNcnnRenderer::initializeFrameProcessingImageLayouts() {
+    for (auto& frame : offscreenFrames) {
+        if (frame.image == VK_NULL_HANDLE) {
+            continue;
+        }
+
+        transitionImageLayout(frame.image, swapChainImageFormat,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
+    }
+}
+
 void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
 #if HAS_NCNN
     waitForAsyncNcnnInference();
@@ -841,9 +853,7 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
         if (result.processRet != 0) {
             std::cerr << "[NCNN] async GPU interpolation failed"
                       << " (code=" << result.processRet
-                      << ", rife_process_ms=" << result.rifeProcessMs
-                      << ", queue_wait_ms=" << result.queueWaitMs
-                      << ", async_task_ms=" << result.inferenceMs << ")" << std::endl;
+                      << ", process_ms=" << result.rifeProcessMs << ")" << std::endl;
             ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
             dropInterpolationTarget(targetIndex, "NCNN inference failed");
             continue;
@@ -879,11 +889,9 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
 
         if (previousDivisor != ncnnPresentationState.ncnnInferenceScaleDivisor || (ncnnPresentationState.ncnnCompletedInferenceCount % 120) == 1) {
             std::cout << "[NCNN] display=" << result.inputW << "x" << result.inputH
-                      << ", rife_input=" << result.inferenceW << "x" << result.inferenceH
+                      << ", input=" << result.inferenceW << "x" << result.inferenceH
                       << ", scale_divisor=" << ncnnPresentationState.ncnnInferenceScaleDivisor
-                      << ", rife_process_ms=" << result.rifeProcessMs
-                      << ", queue_wait_ms=" << result.queueWaitMs
-                      << ", async_task_ms=" << result.inferenceMs << std::endl;
+                      << ", process_ms=" << result.rifeProcessMs << std::endl;
         }
     }
 

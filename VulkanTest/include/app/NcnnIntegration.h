@@ -21,6 +21,8 @@ bool createExportableFrameBuffer(VkDeviceSize size,
 
 void createFrameProcessingResources();
 
+void initializeFrameProcessingImageLayouts();
+
 void cleanupFrameProcessingResources();
 
 uint32_t findAvailableOffscreenFrameSlot() const;

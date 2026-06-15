@@ -298,13 +298,8 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     createInfo.enabledExtensionCount = static_cast<uint32_t>(enabledDeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = enabledDeviceExtensions.data();
 
-    if (validation::Enabled) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validation::Layers.size());
-        createInfo.ppEnabledLayerNames = validation::Layers.data();
-    }
-    else {
-        createInfo.enabledLayerCount = 0;
-    }
+    createInfo.enabledLayerCount = 0;
+    createInfo.ppEnabledLayerNames = nullptr;
 
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
         throw std::runtime_error("failed to create logical device!");

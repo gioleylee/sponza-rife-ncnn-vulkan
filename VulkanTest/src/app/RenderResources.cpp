@@ -151,6 +151,10 @@ void VulkanNcnnRenderer::createDepthResources() {
             depthImageMemories[i]
         );
         depthImageViews[i] = createImageView(depthImages[i], depthFormat, 1);
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(depthImages[i]),
+            "Depth Image Slot " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(depthImageViews[i]),
+            "Depth Image View Slot " + std::to_string(i));
     }
 }
 
@@ -173,6 +177,10 @@ void VulkanNcnnRenderer::createGBufferAttachments() {
             gNormalImageMemories[i]
         );
         gNormalImageViews[i] = createImageView(gNormalImages[i], normalFormat, 1);
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(gNormalImages[i]),
+            "GBuffer Normal Image Slot " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(gNormalImageViews[i]),
+            "GBuffer Normal Image View Slot " + std::to_string(i));
     }
 
     VkFormat albedoFormat = VK_FORMAT_R8G8B8A8_UNORM;
@@ -193,6 +201,10 @@ void VulkanNcnnRenderer::createGBufferAttachments() {
             gAlbedoImageMemories[i]
         );
         gAlbedoImageViews[i] = createImageView(gAlbedoImages[i], albedoFormat, 1);
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(gAlbedoImages[i]),
+            "GBuffer Albedo Image Slot " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(gAlbedoImageViews[i]),
+            "GBuffer Albedo Image View Slot " + std::to_string(i));
     }
 
     VkFormat positionFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -213,6 +225,10 @@ void VulkanNcnnRenderer::createGBufferAttachments() {
             gPositionImageMemories[i]
         );
         gPositionImageViews[i] = createImageView(gPositionImages[i], positionFormat, 1);
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(gPositionImages[i]),
+            "GBuffer Position Image Slot " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(gPositionImageViews[i]),
+            "GBuffer Position Image View Slot " + std::to_string(i));
     }
 }
 
@@ -240,6 +256,8 @@ void VulkanNcnnRenderer::createFramebuffers() {
         if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &offscreenFramebuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create offscreen framebuffer!");
         }
+        setDebugObjectName(VK_OBJECT_TYPE_FRAMEBUFFER, reinterpret_cast<uint64_t>(offscreenFramebuffers[i]),
+            "Offscreen Framebuffer Slot " + std::to_string(i));
     }
 }
 
@@ -344,6 +362,7 @@ void VulkanNcnnRenderer::createGraphicsPipeline() {
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create pipeline layout!");
     } // creation
+    setDebugObjectName(VK_OBJECT_TYPE_PIPELINE_LAYOUT, reinterpret_cast<uint64_t>(pipelineLayout), "Geometry Pipeline Layout");
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -365,6 +384,7 @@ void VulkanNcnnRenderer::createGraphicsPipeline() {
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
+    setDebugObjectName(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(graphicsPipeline), "Sponza Geometry Pipeline");
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -479,6 +499,7 @@ void VulkanNcnnRenderer::createSkinnedGraphicsPipeline() {
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &skinnedGraphicsPipeline) != VK_SUCCESS) {
         throw std::runtime_error("failed to create skinned graphics pipeline!");
     }
+    setDebugObjectName(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(skinnedGraphicsPipeline), "Skinned Geometry Pipeline");
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -579,6 +600,7 @@ void VulkanNcnnRenderer::createLightingPipeline() {
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &lightingPipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create lighting pipeline layout!");
     } // lighting pipeline layout creation
+    setDebugObjectName(VK_OBJECT_TYPE_PIPELINE_LAYOUT, reinterpret_cast<uint64_t>(lightingPipelineLayout), "Lighting Pipeline Layout");
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -600,6 +622,7 @@ void VulkanNcnnRenderer::createLightingPipeline() {
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &lightingPipeline) != VK_SUCCESS) {
         throw std::runtime_error("failed to create lighting pipeline!");
     }
+    setDebugObjectName(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(lightingPipeline), "Deferred Lighting Pipeline");
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);

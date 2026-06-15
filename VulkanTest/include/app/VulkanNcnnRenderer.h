@@ -73,6 +73,11 @@ private:
 
     VkInstance instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
+    PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXTFn = nullptr;
+    PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXTFn = nullptr;
+    PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXTFn = nullptr;
+    PFN_vkQueueBeginDebugUtilsLabelEXT vkQueueBeginDebugUtilsLabelEXTFn = nullptr;
+    PFN_vkQueueEndDebugUtilsLabelEXT vkQueueEndDebugUtilsLabelEXTFn = nullptr;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -290,6 +295,18 @@ private:
     void createInstance();
 
     void setupDebugMessenger();
+
+    void loadDebugUtilsFunctions();
+
+    void setDebugObjectName(VkObjectType objectType, uint64_t objectHandle, const std::string& name);
+
+    void beginDebugLabel(VkCommandBuffer commandBuffer, const std::string& name, const glm::vec4& color);
+
+    void endDebugLabel(VkCommandBuffer commandBuffer);
+
+    void beginQueueDebugLabel(VkQueue queue, const std::string& name, const glm::vec4& color);
+
+    void endQueueDebugLabel(VkQueue queue);
 
     void createSurface();
 

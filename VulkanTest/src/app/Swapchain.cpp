@@ -147,6 +147,10 @@ void VulkanNcnnRenderer::createImageViews() {
         if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create image views!");
         }
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(swapChainImages[i]),
+            "Swapchain Image " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(swapChainImageViews[i]),
+            "Swapchain Image View " + std::to_string(i));
     }
 }
 

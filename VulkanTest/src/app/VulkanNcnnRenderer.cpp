@@ -298,12 +298,85 @@ void VulkanNcnnRenderer::createCommandPool() {
     if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create graphics command pool!");
     }
+    setDebugObjectName(VK_OBJECT_TYPE_COMMAND_POOL, reinterpret_cast<uint64_t>(commandPool), "Graphics Command Pool");
+}
+
+void VulkanNcnnRenderer::loadDebugUtilsFunctions() {
+    vkSetDebugUtilsObjectNameEXTFn =
+        reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT"));
+    vkCmdBeginDebugUtilsLabelEXTFn =
+        reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkCmdBeginDebugUtilsLabelEXT"));
+    vkCmdEndDebugUtilsLabelEXTFn =
+        reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkCmdEndDebugUtilsLabelEXT"));
+    vkQueueBeginDebugUtilsLabelEXTFn =
+        reinterpret_cast<PFN_vkQueueBeginDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkQueueBeginDebugUtilsLabelEXT"));
+    vkQueueEndDebugUtilsLabelEXTFn =
+        reinterpret_cast<PFN_vkQueueEndDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkQueueEndDebugUtilsLabelEXT"));
+}
+
+void VulkanNcnnRenderer::setDebugObjectName(VkObjectType objectType, uint64_t objectHandle, const std::string& name) {
+    if (!vkSetDebugUtilsObjectNameEXTFn || objectHandle == 0 || name.empty()) {
+        return;
+    }
+
+    VkDebugUtilsObjectNameInfoEXT nameInfo{};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.objectType = objectType;
+    nameInfo.objectHandle = objectHandle;
+    nameInfo.pObjectName = name.c_str();
+    vkSetDebugUtilsObjectNameEXTFn(device, &nameInfo);
+}
+
+void VulkanNcnnRenderer::beginDebugLabel(VkCommandBuffer commandBuffer, const std::string& name, const glm::vec4& color) {
+    if (!vkCmdBeginDebugUtilsLabelEXTFn || commandBuffer == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkDebugUtilsLabelEXT label{};
+    label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+    label.pLabelName = name.c_str();
+    label.color[0] = color.r;
+    label.color[1] = color.g;
+    label.color[2] = color.b;
+    label.color[3] = color.a;
+    vkCmdBeginDebugUtilsLabelEXTFn(commandBuffer, &label);
+}
+
+void VulkanNcnnRenderer::endDebugLabel(VkCommandBuffer commandBuffer) {
+    if (vkCmdEndDebugUtilsLabelEXTFn && commandBuffer != VK_NULL_HANDLE) {
+        vkCmdEndDebugUtilsLabelEXTFn(commandBuffer);
+    }
+}
+
+void VulkanNcnnRenderer::beginQueueDebugLabel(VkQueue queue, const std::string& name, const glm::vec4& color) {
+    if (!vkQueueBeginDebugUtilsLabelEXTFn || queue == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkDebugUtilsLabelEXT label{};
+    label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+    label.pLabelName = name.c_str();
+    label.color[0] = color.r;
+    label.color[1] = color.g;
+    label.color[2] = color.b;
+    label.color[3] = color.a;
+    vkQueueBeginDebugUtilsLabelEXTFn(queue, &label);
+}
+
+void VulkanNcnnRenderer::endQueueDebugLabel(VkQueue queue) {
+    if (vkQueueEndDebugUtilsLabelEXTFn && queue != VK_NULL_HANDLE) {
+        vkQueueEndDebugUtilsLabelEXTFn(queue);
+    }
 }
 
 void VulkanNcnnRenderer::copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer,
                                                               uint32_t imageIndex,
                                                               uint32_t offscreenSlot) {
     auto& source = offscreenFrames[offscreenSlot];
+    const std::string copyLabel =
+        "Copy Real Frame " + debugRealFrameLabel(source.debugFrameId) +
+        " to Swapchain [Offscreen Slot " + std::to_string(offscreenSlot) + "]";
+    beginDebugLabel(commandBuffer, copyLabel, glm::vec4(0.2f, 0.8f, 1.0f, 1.0f));
 
     // Offscreen history remains shader-readable between frames so NCNN can wrap it
     // directly. Each presentation copy temporarily promotes exactly one history
@@ -359,6 +432,7 @@ void VulkanNcnnRenderer::copyOffscreenImageToSwapchain(VkCommandBuffer commandBu
     toTransferDst.dstAccessMask = 0;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
+    endDebugLabel(commandBuffer);
 }
 
 void VulkanNcnnRenderer::resetFrameInterpolationDebugState() {
@@ -716,6 +790,13 @@ void VulkanNcnnRenderer::createCommandBuffers() {
     if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate command buffers!");
     }
+
+    for (uint32_t i = 0; i < commandBuffers.size(); ++i) {
+        setDebugObjectName(
+            VK_OBJECT_TYPE_COMMAND_BUFFER,
+            reinterpret_cast<uint64_t>(commandBuffers[i]),
+            "Frame Command Buffer " + std::to_string(i));
+    }
 }
 
 uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
@@ -767,6 +848,10 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     }
 
     const uint64_t realFrameId = nextDebugFrameId++;
+    const std::string realFrameLabel =
+        "Render Real Frame " + std::to_string(realFrameId) +
+        " [Offscreen Slot " + std::to_string(offscreenSlot) + "]";
+    beginDebugLabel(commandBuffer, realFrameLabel, glm::vec4(0.1f, 0.9f, 0.2f, 1.0f));
     const bool renderedFrameIsExpected =
         static_cast<int64_t>(realFrameId * 2) == debugLastPresentedTimelineStep + 1;
     offscreenFrames[offscreenSlot].debugFrameId = realFrameId;
@@ -904,6 +989,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
+    endDebugLabel(commandBuffer);
 
 #if HAS_NCNN
     if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer) {
@@ -991,12 +1077,18 @@ void VulkanNcnnRenderer::createSyncObjects() {
             vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create synchronization objects for a frame!");
         }
+        setDebugObjectName(VK_OBJECT_TYPE_SEMAPHORE, reinterpret_cast<uint64_t>(imageAvailableSemaphores[i]),
+            "Image Available Semaphore Frame " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_FENCE, reinterpret_cast<uint64_t>(inFlightFences[i]),
+            "In Flight Fence Frame " + std::to_string(i));
     }
 
     for (size_t i = 0; i < renderFinishedSemaphores.size(); ++i) {
         if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create render-finished semaphore for swapchain image!");
         }
+        setDebugObjectName(VK_OBJECT_TYPE_SEMAPHORE, reinterpret_cast<uint64_t>(renderFinishedSemaphores[i]),
+            "Render Finished Semaphore Swapchain Image " + std::to_string(i));
     }
 }
 
@@ -1142,7 +1234,10 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
     VkResult submitResult = VK_SUCCESS;
     {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
+        const std::string submitLabel = "Queue Submit Logical Frame " + debugLastPresentedFrameLabel;
+        beginQueueDebugLabel(graphicsQueue, submitLabel, glm::vec4(0.2f, 1.0f, 0.4f, 1.0f));
         submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[frameSlot]);
+        endQueueDebugLabel(graphicsQueue);
     }
     if (submitResult != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");

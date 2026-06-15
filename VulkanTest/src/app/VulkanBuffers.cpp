@@ -21,6 +21,7 @@ void VulkanNcnnRenderer::createVertexBuffer() {
 
     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
+    setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(vertexBuffer), "Sponza Vertex Buffer");
     
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 
@@ -46,6 +47,7 @@ void VulkanNcnnRenderer::createIndexBuffer() {
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         indexBuffer, indexBufferMemory);
+    setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(indexBuffer), "Sponza Index Buffer");
 
     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
 
@@ -72,6 +74,7 @@ void VulkanNcnnRenderer::createSkinnedVertexBuffer() {
 
     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, skinnedVertexBuffer, skinnedVertexBufferMemory);
+    setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(skinnedVertexBuffer), "CesiumMan Skinned Vertex Buffer");
 
     copyBuffer(stagingBuffer, skinnedVertexBuffer, bufferSize);
 
@@ -101,6 +104,7 @@ void VulkanNcnnRenderer::createSkinnedIndexBuffer() {
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         skinnedIndexBuffer, skinnedIndexBufferMemory);
+    setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(skinnedIndexBuffer), "CesiumMan Skinned Index Buffer");
 
     copyBuffer(stagingBuffer, skinnedIndexBuffer, bufferSize);
 
@@ -128,21 +132,29 @@ void VulkanNcnnRenderer::createUniformBuffers() {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                     | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+        setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(uniformBuffers[i]),
+            "Scene Uniform Buffer Frame " + std::to_string(i));
 
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
 
         createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                     | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cubeUniformBuffers[i], cubeUniformBuffersMemory[i]);
+        setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(cubeUniformBuffers[i]),
+            "Cube Uniform Buffer Frame " + std::to_string(i));
 
         vkMapMemory(device, cubeUniformBuffersMemory[i], 0, bufferSize, 0, &cubeUniformBuffersMapped[i]);
 
         createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                     | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cesiumUniformBuffers[i], cesiumUniformBuffersMemory[i]);
+        setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(cesiumUniformBuffers[i]),
+            "CesiumMan Uniform Buffer Frame " + std::to_string(i));
 
         vkMapMemory(device, cesiumUniformBuffersMemory[i], 0, bufferSize, 0, &cesiumUniformBuffersMapped[i]);
 
         createBuffer(skinBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                     | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, skinUniformBuffers[i], skinUniformBuffersMemory[i]);
+        setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(skinUniformBuffers[i]),
+            "CesiumMan Skin Uniform Buffer Frame " + std::to_string(i));
 
         vkMapMemory(device, skinUniformBuffersMemory[i], 0, skinBufferSize, 0, &skinUniformBuffersMapped[i]);
     }

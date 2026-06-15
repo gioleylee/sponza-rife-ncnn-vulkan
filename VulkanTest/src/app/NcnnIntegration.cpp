@@ -318,7 +318,8 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
     const VkImageCreateFlags offscreenFlags =
         ncnnInputFormat != swapChainImageFormat ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
 
-    for (auto& frame : offscreenFrames) {
+    for (uint32_t i = 0; i < offscreenFrames.size(); ++i) {
+        auto& frame = offscreenFrames[i];
         createImage(
             swapChainExtent.width,
             swapChainExtent.height,
@@ -333,11 +334,18 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
         );
         frame.imageView = createImageView(frame.image, swapChainImageFormat, 1);
         frame.ncnnInputImageView = createImageView(frame.image, ncnnInputFormat, 1);
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(frame.image),
+            "Offscreen Source Image Slot " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(frame.imageView),
+            "Offscreen Source SRGB View Slot " + std::to_string(i));
+        setDebugObjectName(VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(frame.ncnnInputImageView),
+            "Offscreen Source NCNN Input View Slot " + std::to_string(i));
 
         frame.size = frameSize;
     }
 
-    for (auto& output : ncnnOutputBuffers) {
+    for (uint32_t i = 0; i < ncnnOutputBuffers.size(); ++i) {
+        auto& output = ncnnOutputBuffers[i];
         createBuffer(
             frameSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -354,6 +362,8 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
         output.sequence = 0;
         output.debugPreviousFrameId = UINT64_MAX;
         output.debugCurrentFrameId = UINT64_MAX;
+        setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(output.gpuBuffer),
+            "NCNN Interpolated Output Buffer Slot " + std::to_string(i));
     }
 
     pendingCaptureSlotByFrame.fill(UINT32_MAX);
@@ -496,10 +506,10 @@ uint32_t VulkanNcnnRenderer::findAvailableOffscreenFrameSlot() const {
 }
 
 void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer,
-                                                       uint32_t imageIndex,
-                                                       VkBuffer sourceBuffer,
-                                                       VkAccessFlags sourceAccessMask,
-                                                       VkPipelineStageFlags sourceStageMask) {
+                                                   uint32_t imageIndex,
+                                                   VkBuffer sourceBuffer,
+                                                   VkAccessFlags sourceAccessMask,
+                                                   VkPipelineStageFlags sourceStageMask) {
     VkImageMemoryBarrier toTransferDstBarrier{};
     toTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     // Presentation overwrites the entire acquired image, so its old contents
@@ -554,6 +564,7 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
         nullptr
     );
 
+    beginDebugLabel(commandBuffer, "Output Conversion", glm::vec4(0.9f, 0.4f, 1.0f, 1.0f));
     uint32_t markerWidth = 0;
     if (markInterpolatedFrames) {
         markerWidth = std::min(
@@ -609,6 +620,7 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
             &region
         );
     }
+    endDebugLabel(commandBuffer);
 
     VkImageMemoryBarrier backToPresentBarrier{};
     backToPresentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -658,6 +670,10 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
 
     const uint64_t presentedPreviousFrameId = selectedOutput.debugPreviousFrameId;
     const uint32_t targetIndex = findInterpolationTargetIndex(presentedPreviousFrameId);
+    const std::string copyLabel =
+        "Copy Interpolated Frame " + debugInterpolatedFrameLabel(presentedPreviousFrameId) +
+        " to Swapchain [Output Slot " + std::to_string(ncnnPresentationState.ncnnPendingInterpolatedOutputIndex) + "]";
+    beginDebugLabel(commandBuffer, copyLabel, glm::vec4(0.9f, 0.4f, 1.0f, 1.0f));
     copyNcnnBufferToSwapchain(
         commandBuffer,
         imageIndex,
@@ -665,6 +681,7 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
         VK_ACCESS_SHADER_WRITE_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
     );
+    endDebugLabel(commandBuffer);
     pendingPresentedFrameKind = PresentedFrameKind::Interpolated;
 
     selectedOutput.ready = false;
@@ -1057,6 +1074,14 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
 
             const auto processFrames = [&]() {
                 const auto processStart = std::chrono::high_resolution_clock::now();
+                const std::string inferenceLabel =
+                    "RIFE " + std::to_string(prevFrameId) + " + " + std::to_string(currFrameId) +
+                    " -> " + debugInterpolatedFrameLabel(prevFrameId) +
+                    " [Output Slot " + std::to_string(outputIndex) + "]";
+                beginQueueDebugLabel(computeQueue, inferenceLabel, glm::vec4(0.9f, 0.2f, 1.0f, 1.0f));
+                beginQueueDebugLabel(computeQueue, "Input Conversion", glm::vec4(0.2f, 0.6f, 1.0f, 1.0f));
+                endQueueDebugLabel(computeQueue);
+                beginQueueDebugLabel(computeQueue, "NCNN Inference", glm::vec4(0.9f, 0.2f, 1.0f, 1.0f));
                 const int processRet = ncnnFrameInterpolator.processGpuRgbaFrames(
                     prevImage,
                     prevImageView,
@@ -1074,6 +1099,10 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
                     inferenceH,
                     0.5f
                 );
+                endQueueDebugLabel(computeQueue);
+                beginQueueDebugLabel(computeQueue, "Output Conversion", glm::vec4(0.9f, 0.5f, 0.2f, 1.0f));
+                endQueueDebugLabel(computeQueue);
+                endQueueDebugLabel(computeQueue);
                 result.rifeProcessMs = std::chrono::duration<double, std::milli>(
                     std::chrono::high_resolution_clock::now() - processStart).count();
                 return processRet;

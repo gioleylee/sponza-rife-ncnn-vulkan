@@ -29,6 +29,26 @@ void VulkanNcnnRenderer::createInstance() {
     createInfo.pApplicationInfo = &appInfo;
 
     auto extensions = validation::getRequiredInstanceExtensions();
+    uint32_t instanceExtensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, nullptr);
+    std::vector<VkExtensionProperties> availableInstanceExtensions(instanceExtensionCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, availableInstanceExtensions.data());
+
+    const bool debugUtilsAvailable = std::any_of(
+        availableInstanceExtensions.begin(),
+        availableInstanceExtensions.end(),
+        [](const VkExtensionProperties& extension) {
+            return std::strcmp(extension.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
+        });
+    const bool debugUtilsRequested = std::any_of(
+        extensions.begin(),
+        extensions.end(),
+        [](const char* extension) {
+            return std::strcmp(extension, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
+        });
+    if (debugUtilsAvailable && !debugUtilsRequested) {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -289,6 +309,7 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
         throw std::runtime_error("failed to create logical device!");
     }
+    loadDebugUtilsFunctions();
 
     graphicsQueueFamilyIndex = indices.graphicsFamily.value();
     presentQueueFamilyIndex = indices.presentFamily.value();
@@ -305,6 +326,9 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     vkGetDeviceQueue(device, graphicsQueueFamilyIndex, graphicsQueueIndex, &graphicsQueue);
     vkGetDeviceQueue(device, presentQueueFamilyIndex, presentQueueIndex, &presentQueue);
     vkGetDeviceQueue(device, computeQueueFamilyIndex, computeQueueIndex, &computeQueue);
+    setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(graphicsQueue), "Graphics Queue");
+    setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(presentQueue), "Present Queue");
+    setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(computeQueue), "Compute Queue");
 
 #if defined(_WIN32)
     vkGetMemoryWin32HandleKHRFn =

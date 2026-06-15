@@ -16,6 +16,7 @@
 #include <glm/gtc/constants.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <future>
 #include <mutex>
@@ -176,6 +177,16 @@ private:
     uint64_t nextDebugFrameId = 0;
     std::string debugLastPresentedFrameLabel = "none";
     int64_t debugLastPresentedTimelineStep = -1;
+    std::chrono::steady_clock::time_point benchmarkNextPresentTime{};
+    std::chrono::steady_clock::time_point benchmarkNextRealFrameTime{};
+    std::chrono::steady_clock::time_point fpsStatsWindowStart{};
+    PresentedFrameKind pendingPresentedFrameKind = PresentedFrameKind::None;
+    uint32_t fpsPresentedFrameCount = 0;
+    uint32_t fpsRealFrameCount = 0;
+    uint32_t fpsInterpolatedFrameCount = 0;
+    float displayedPresentedFps = 0.0f;
+    float displayedRealFps = 0.0f;
+    float displayedInterpolatedFps = 0.0f;
     double previousFrameCaptureProcessMs = 0.0;
     double lastFrameCaptureProcessMs = 0.0;
     double lastFramePairCaptureProcessMs = 0.0;
@@ -191,6 +202,8 @@ private:
     uint32_t rotatingCubeIndexOffset = 0;
     uint32_t rotatingCubeIndexCount = 0;
     glm::vec3 rotatingCubePosition = glm::vec3(0.0f);
+    float rotatingCubeYawRadians = 0.0f;
+    float rotatingCubePitchRadians = 0.0f;
 
     glm::vec3 cameraPos = glm::vec3(-3.5f, 1.0f, 0.0f);
     glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
@@ -217,8 +230,12 @@ private:
     bool vKeyPressed = false;
     bool showSpecular = false;
     bool mKeyPressed = false;
+    bool showInterpolationDebugPanel = false;
     bool markInterpolatedFrames = false;
     bool yKeyPressed = false;
+    bool showFpsCounter = true;
+    bool benchmarkModeEnabled = false;
+    bool uKeyPressed = false;
     bool imguiVisible = false;
     bool rightMousePressed = false;
     bool imguiInitialized = false;
@@ -366,6 +383,8 @@ private:
 
     void updateFrameState(uint32_t frameSlot);
 
+    void setBenchmarkModeEnabled(bool enabled);
+
     uint32_t recordMainRenderCommands(uint32_t frameSlot,
                                       uint32_t imageIndex,
                                       PresentationCommandMode mode);
@@ -373,6 +392,8 @@ private:
     void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot);
 
     void handlePresentation(uint32_t imageIndex);
+
+    void recordPresentedFrameStats(PresentedFrameKind frameKind);
 
     void advanceFrameIndex();
 

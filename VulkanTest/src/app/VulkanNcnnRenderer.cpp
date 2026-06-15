@@ -68,6 +68,36 @@ constexpr float SPONZA_FLOOR_Y = -1.264425f;
 constexpr glm::vec3 CESIUM_MAN_SCENE_POSITION = glm::vec3(3.0f, SPONZA_FLOOR_Y + 1.25f, 0.0f);
 constexpr float CESIUM_MAN_WALK_RADIUS = 1.0f;
 constexpr float CESIUM_MAN_WALK_SECONDS_PER_LOOP = 4.0f;
+constexpr float MAX_SIMULATION_DELTA_SECONDS = 0.1f;
+constexpr float ROTATING_CUBE_YAW_RADIANS_PER_SECOND = glm::half_pi<float>();
+constexpr float ROTATING_CUBE_PITCH_RADIANS_PER_SECOND = glm::quarter_pi<float>();
+
+std::chrono::steady_clock::duration secondsPerFrame(double framesPerSecond) {
+    return std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(1.0 / framesPerSecond));
+}
+
+bool isUnsetTimePoint(std::chrono::steady_clock::time_point timePoint) {
+    return timePoint.time_since_epoch() == std::chrono::steady_clock::duration::zero();
+}
+
+void advanceScheduledTime(std::chrono::steady_clock::time_point& scheduledTime,
+                          std::chrono::steady_clock::duration interval,
+                          std::chrono::steady_clock::time_point now) {
+    scheduledTime += interval;
+    while (scheduledTime <= now) {
+        scheduledTime += interval;
+    }
+}
+
+void advancePresentationTime(std::chrono::steady_clock::time_point& scheduledTime,
+                             std::chrono::steady_clock::duration interval,
+                             std::chrono::steady_clock::time_point now) {
+    scheduledTime += interval;
+    if (scheduledTime + interval < now) {
+        scheduledTime = now;
+    }
+}
 
 }
 
@@ -161,19 +191,22 @@ void VulkanNcnnRenderer::initializeOptionalNcnn() {
 }
 
 void VulkanNcnnRenderer::mainLoop() {
-    auto lastTime = std::chrono::high_resolution_clock::now();
+    auto lastTime = std::chrono::steady_clock::now();
 
     while (!glfwWindowShouldClose(window)) {
-        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto currentTime = std::chrono::steady_clock::now();
         float deltaTime =
             std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
         lastTime = currentTime;
+        deltaTime = std::min(deltaTime, MAX_SIMULATION_DELTA_SECONDS);
 
         glfwPollEvents();
         processInput(deltaTime);
         processMouseLook();
-        frameDeltaSeconds = deltaTime;
+        frameDeltaSeconds += deltaTime;
         elapsedTimeSeconds += deltaTime;
+        rotatingCubeYawRadians += ROTATING_CUBE_YAW_RADIANS_PER_SECOND * deltaTime;
+        rotatingCubePitchRadians += ROTATING_CUBE_PITCH_RADIANS_PER_SECOND * deltaTime;
         drawFrame();
     }
 
@@ -851,6 +884,15 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     lightingPush.showPosition = showPosition ? 1.0f : 0.0f;
     lightingPush.showSpecular = showSpecular ? 1.0f : 0.0f;
     lightingPush.cameraPos = glm::vec4(cameraPos, 1.0f);
+    const float panelWidth = std::min(260.0f, std::max(120.0f, static_cast<float>(swapChainExtent.width) * 0.28f));
+    const float panelHeight = std::min(140.0f, std::max(72.0f, static_cast<float>(swapChainExtent.height) * 0.18f));
+    const float panelTravelX = std::max(1.0f, static_cast<float>(swapChainExtent.width) - panelWidth - 24.0f);
+    const float panelTravelY = std::max(1.0f, static_cast<float>(swapChainExtent.height) - panelHeight - 24.0f);
+    const float panelX = 12.0f + panelTravelX * (0.5f + 0.5f * std::sin(elapsedTimeSeconds * 0.45f));
+    const float panelY = 12.0f + panelTravelY * (0.5f + 0.5f * std::sin(elapsedTimeSeconds * 0.31f + 1.2f));
+    lightingPush.debugPanelRect = glm::vec4(panelX, panelY, panelWidth, panelHeight);
+    lightingPush.debugPanelEnabled = showInterpolationDebugPanel ? 1.0f : 0.0f;
+    lightingPush.debugPanelFrameId = static_cast<float>(realFrameId);
 
     vkCmdPushConstants(commandBuffer,
         lightingPipelineLayout,
@@ -979,8 +1021,8 @@ void VulkanNcnnRenderer::updateUniformBuffer(uint32_t currentImage) {
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 
     glm::mat4 cubeModel = glm::translate(glm::mat4(1.0f), rotatingCubePosition);
-    cubeModel = glm::rotate(cubeModel, elapsedTimeSeconds * glm::half_pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
-    cubeModel = glm::rotate(cubeModel, elapsedTimeSeconds * glm::quarter_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+    cubeModel = glm::rotate(cubeModel, rotatingCubeYawRadians, glm::vec3(0.0f, 1.0f, 0.0f));
+    cubeModel = glm::rotate(cubeModel, rotatingCubePitchRadians, glm::vec3(1.0f, 0.0f, 0.0f));
     cubeModel = glm::scale(cubeModel, glm::vec3(0.7f));
 
     UniformBufferObject cubeUbo{};
@@ -1057,6 +1099,21 @@ void VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
 #endif
 }
 
+void VulkanNcnnRenderer::setBenchmarkModeEnabled(bool enabled) {
+    if (benchmarkModeEnabled == enabled) {
+        return;
+    }
+
+    benchmarkModeEnabled = enabled;
+    const auto now = std::chrono::steady_clock::now();
+    benchmarkNextPresentTime = now;
+    benchmarkNextRealFrameTime = now;
+
+    std::cout << "[BENCH] 30 FPS source lock "
+              << (benchmarkModeEnabled ? "enabled" : "disabled")
+              << std::endl;
+}
+
 uint32_t VulkanNcnnRenderer::recordMainRenderCommands(uint32_t frameSlot,
                                                          uint32_t imageIndex,
                                                          PresentationCommandMode mode) {
@@ -1112,6 +1169,11 @@ void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
     }
 
+    if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+        recordPresentedFrameStats(pendingPresentedFrameKind);
+    }
+    pendingPresentedFrameKind = PresentedFrameKind::None;
+
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
         framebufferResized = false;
         recreateSwapChain();
@@ -1121,11 +1183,71 @@ void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
     }
 }
 
+void VulkanNcnnRenderer::recordPresentedFrameStats(PresentedFrameKind frameKind) {
+    if (frameKind == PresentedFrameKind::None) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (isUnsetTimePoint(fpsStatsWindowStart)) {
+        fpsStatsWindowStart = now;
+    }
+
+    ++fpsPresentedFrameCount;
+    if (frameKind == PresentedFrameKind::Real) {
+        ++fpsRealFrameCount;
+    }
+    else if (frameKind == PresentedFrameKind::Interpolated) {
+        ++fpsInterpolatedFrameCount;
+    }
+
+    const std::chrono::duration<float> elapsed = now - fpsStatsWindowStart;
+    if (elapsed.count() < 1.0f) {
+        return;
+    }
+
+    displayedPresentedFps = static_cast<float>(fpsPresentedFrameCount) / elapsed.count();
+    displayedRealFps = static_cast<float>(fpsRealFrameCount) / elapsed.count();
+    displayedInterpolatedFps = static_cast<float>(fpsInterpolatedFrameCount) / elapsed.count();
+    fpsPresentedFrameCount = 0;
+    fpsRealFrameCount = 0;
+    fpsInterpolatedFrameCount = 0;
+    fpsStatsWindowStart = now;
+}
+
 void VulkanNcnnRenderer::advanceFrameIndex() {
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void VulkanNcnnRenderer::drawFrame() {
+    bool useChronologicalInterpolation = false;
+#if HAS_NCNN
+    useChronologicalInterpolation =
+        ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer;
+#endif
+
+    const auto schedulerNow = std::chrono::steady_clock::now();
+    const auto realFrameInterval = secondsPerFrame(30.0);
+    const auto presentationInterval = secondsPerFrame(useChronologicalInterpolation ? 60.0 : 30.0);
+    bool benchmarkCanRenderSourceFrame = true;
+    if (benchmarkModeEnabled) {
+        if (isUnsetTimePoint(benchmarkNextPresentTime)) {
+            benchmarkNextPresentTime = schedulerNow;
+        }
+        if (isUnsetTimePoint(benchmarkNextRealFrameTime)) {
+            benchmarkNextRealFrameTime = schedulerNow;
+        }
+
+        if (schedulerNow < benchmarkNextPresentTime) {
+            return;
+        }
+
+        benchmarkCanRenderSourceFrame = schedulerNow >= benchmarkNextRealFrameTime;
+        if (!useChronologicalInterpolation && !benchmarkCanRenderSourceFrame) {
+            return;
+        }
+    }
+
     const uint32_t frameSlot = currentFrame;
     updateFrameState(frameSlot);
 
@@ -1134,15 +1256,11 @@ void VulkanNcnnRenderer::drawFrame() {
         return;
     }
 
-    const bool canRenderSourceFrame = findAvailableOffscreenFrameSlot() != UINT32_MAX;
+    const bool canRenderSourceFrame =
+        benchmarkCanRenderSourceFrame && findAvailableOffscreenFrameSlot() != UINT32_MAX;
     PresentationCommandMode mode = PresentationCommandMode::RenderFrame;
     const int64_t expectedTimelineStep = debugLastPresentedTimelineStep + 1;
     const bool expectedIsReal = (expectedTimelineStep % 2) == 0;
-    bool useChronologicalInterpolation = false;
-#if HAS_NCNN
-    useChronologicalInterpolation =
-        ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer;
-#endif
 
     if (!useChronologicalInterpolation) {
         mode = choosePresentationCommandMode(ncnnPresentationState, offscreenFrames.size(), canRenderSourceFrame);
@@ -1236,11 +1354,22 @@ void VulkanNcnnRenderer::drawFrame() {
         mode != PresentationCommandMode::RenderFrame) {
         mode = PresentationCommandMode::RenderFrame;
     }
-
-    updateSkinAnimation(frameDeltaSeconds, frameSlot);
+    else if (benchmarkModeEnabled &&
+             !benchmarkCanRenderSourceFrame &&
+             mode == PresentationCommandMode::RenderFrame) {
+        if (ncnnPresentationState.ncnnHeldSourceDisplayIndex < offscreenFrames.size()) {
+            mode = PresentationCommandMode::DisplayHeldSourceFrame;
+        }
+        else if (ncnnPresentationState.ncnnLastPresentedSourceIndex < offscreenFrames.size()) {
+            ncnnPresentationState.ncnnHeldSourceDisplayIndex = ncnnPresentationState.ncnnLastPresentedSourceIndex;
+            mode = PresentationCommandMode::DisplayHeldSourceFrame;
+        }
+    }
 
     if (mode == PresentationCommandMode::RenderFrame) {
+        updateSkinAnimation(frameDeltaSeconds, frameSlot);
         updateUniformBuffer(frameSlot);
+        frameDeltaSeconds = 0.0f;
     }
 
     beginImGuiFrame();
@@ -1249,5 +1378,14 @@ void VulkanNcnnRenderer::drawFrame() {
     const uint32_t capturedNcnnSlot = recordMainRenderCommands(frameSlot, imageIndex, mode);
     submitGraphicsWork(frameSlot, imageIndex, capturedNcnnSlot);
     handlePresentation(imageIndex);
+
+    if (benchmarkModeEnabled) {
+        const auto afterPresent = std::chrono::steady_clock::now();
+        advancePresentationTime(benchmarkNextPresentTime, presentationInterval, afterPresent);
+        if (capturedNcnnSlot != UINT32_MAX) {
+            advanceScheduledTime(benchmarkNextRealFrameTime, realFrameInterval, afterPresent);
+        }
+    }
+
     advanceFrameIndex();
 }

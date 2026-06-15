@@ -159,6 +159,9 @@ struct LightingPushConstants {
     alignas(4) float showPosition;
     alignas(4) float showSpecular;
     alignas(16) glm::vec4 cameraPos;
+    alignas(16) glm::vec4 debugPanelRect;
+    alignas(4) float debugPanelEnabled;
+    alignas(4) float debugPanelFrameId;
 };
 
 // A real rendered frame lives entirely on the GPU. imageView preserves SRGB
@@ -253,6 +256,12 @@ enum class PresentationCommandMode {
     DisplayInterpolatedFrame,
     DisplayCapturedSourceFrame,
     DisplayHeldSourceFrame
+};
+
+enum class PresentedFrameKind {
+    None,
+    Real,
+    Interpolated
 };
 
 struct Material {

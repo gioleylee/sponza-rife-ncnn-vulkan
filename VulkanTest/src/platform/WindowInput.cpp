@@ -118,6 +118,15 @@ void VulkanNcnnRenderer::processInput(float deltaTime) {
         yKeyPressed = false;
     }
 
+    if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
+        if (!uKeyPressed) {
+            setBenchmarkModeEnabled(!benchmarkModeEnabled);
+            uKeyPressed = true;
+        }
+    } else {
+        uKeyPressed = false;
+    }
+
 #if HAS_NCNN
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (!rKeyPressed) {

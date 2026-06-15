@@ -665,6 +665,7 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
         VK_ACCESS_SHADER_WRITE_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
     );
+    pendingPresentedFrameKind = PresentedFrameKind::Interpolated;
 
     selectedOutput.ready = false;
     selectedOutput.inUseByGraphics = true;
@@ -691,6 +692,7 @@ void VulkanNcnnRenderer::displayNcnnSourceBufferOnSwapchain(VkCommandBuffer comm
     }
 
     markDebugRealFramePresented(sourceIndex);
+    pendingPresentedFrameKind = PresentedFrameKind::Real;
     copyOffscreenImageToSwapchain(commandBuffer, imageIndex, sourceIndex);
 }
 

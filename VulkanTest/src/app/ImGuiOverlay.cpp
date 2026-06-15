@@ -157,7 +157,7 @@ void VulkanNcnnRenderer::cleanupImGui() {
 }
 
 void VulkanNcnnRenderer::beginImGuiFrame() {
-    if (!imguiInitialized || !imguiVisible) {
+    if (!imguiInitialized) {
         return;
     }
 
@@ -165,42 +165,69 @@ void VulkanNcnnRenderer::beginImGuiFrame() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowSize(ImVec2(360.0f, 0.0f), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Renderer Features", &imguiVisible, ImGuiWindowFlags_AlwaysAutoResize);
+    if (showFpsCounter) {
+        ImGui::SetNextWindowPos(ImVec2(12.0f, 12.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.35f);
+        ImGui::Begin("Presented FPS",
+            nullptr,
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoInputs |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav);
+        ImGui::Text("Presented: %.1f FPS", displayedPresentedFps);
+        ImGui::Text("Real: %.1f FPS", displayedRealFps);
+        ImGui::Text("Interpolated: %.1f FPS", displayedInterpolatedFps);
+        ImGui::End();
+    }
 
-    ImGui::TextUnformatted("Debug Views");
-    ImGui::Checkbox("Normal buffer (N)", &showNormals);
-    ImGui::Checkbox("Albedo buffer (B)", &showAlbedo);
-    ImGui::Checkbox("Position buffer (V)", &showPosition);
-    ImGui::Checkbox("Specular debug (M)", &showSpecular);
+    if (imguiVisible) {
+        ImGui::SetNextWindowSize(ImVec2(360.0f, 0.0f), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Renderer Features", &imguiVisible, ImGuiWindowFlags_AlwaysAutoResize);
 
-    ImGui::Separator();
-    ImGui::TextUnformatted("Frame Interpolation");
+        ImGui::TextUnformatted("Overlay");
+        ImGui::Checkbox("FPS counter", &showFpsCounter);
+        ImGui::Separator();
+
+        ImGui::TextUnformatted("Debug Views");
+        ImGui::Checkbox("Normal buffer (N)", &showNormals);
+        ImGui::Checkbox("Albedo buffer (B)", &showAlbedo);
+        ImGui::Checkbox("Position buffer (V)", &showPosition);
+        ImGui::Checkbox("Specular debug (M)", &showSpecular);
+        ImGui::Checkbox("Interpolation debug panel", &showInterpolationDebugPanel);
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Frame Interpolation");
 #if HAS_NCNN
-    bool realtimeInterpolation = ncnnPresentationState.ncnnRealtimeInterpolationEnabled;
-    if (ImGui::Checkbox("Realtime RIFE interpolation (R)", &realtimeInterpolation)) {
-        setNcnnRealtimeInterpolationEnabled(realtimeInterpolation);
-    }
-    if (!ncnnModelAttachedToRenderer) {
-        ImGui::TextDisabled("RIFE model is not attached to the Vulkan renderer");
-    }
+        bool realtimeInterpolation = ncnnPresentationState.ncnnRealtimeInterpolationEnabled;
+        if (ImGui::Checkbox("Realtime RIFE interpolation (R)", &realtimeInterpolation)) {
+            setNcnnRealtimeInterpolationEnabled(realtimeInterpolation);
+        }
+        if (!ncnnModelAttachedToRenderer) {
+            ImGui::TextDisabled("RIFE model is not attached to the Vulkan renderer");
+        }
 #else
-    ImGui::TextDisabled("NCNN/RIFE support is not compiled in");
+        ImGui::TextDisabled("NCNN/RIFE support is not compiled in");
 #endif
-    ImGui::Checkbox("Green interpolated-frame marker (Y)", &markInterpolatedFrames);
+        ImGui::Checkbox("Green interpolated-frame marker (Y)", &markInterpolatedFrames);
+        bool benchmarkMode = benchmarkModeEnabled;
+        if (ImGui::Checkbox("Benchmark 30 FPS source lock (U)", &benchmarkMode)) {
+            setBenchmarkModeEnabled(benchmarkMode);
+        }
 
-    ImGui::Separator();
-    ImGui::TextUnformatted("Camera");
-    ImGui::Checkbox("Auto-pan camera (T)", &autoPanEnabled);
-    ImGui::SliderFloat("Auto-pan speed", &autoPanSpeedDegreesPerSecond, 0.25f, 120.0f, "%.2f deg/s");
+        ImGui::Separator();
+        ImGui::TextUnformatted("Camera");
+        ImGui::Checkbox("Auto-pan camera (T)", &autoPanEnabled);
+        ImGui::SliderFloat("Auto-pan speed", &autoPanSpeedDegreesPerSecond, 0.25f, 120.0f, "%.2f deg/s");
 
-    ImGui::End();
+        ImGui::End();
+    }
     ImGui::Render();
 }
 
 void VulkanNcnnRenderer::renderImGuiOverlay(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
     if (!imguiInitialized ||
-        !imguiVisible ||
         imageIndex >= imguiFramebuffers.size()) {
         return;
     }

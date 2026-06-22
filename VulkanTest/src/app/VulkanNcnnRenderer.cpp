@@ -27,6 +27,13 @@
 
 #include "VulkanNcnnRenderer.h"
 
+#if __has_include(<nvtx3/nvToolsExt.h>)
+#include <nvtx3/nvToolsExt.h>
+#define VULKAN_RENDERER_HAS_NVTX3 1
+#else
+#define VULKAN_RENDERER_HAS_NVTX3 0
+#endif
+
 namespace {
 
 PresentationCommandMode choosePresentationCommandMode(const NcnnPresentationState& ncnnState,
@@ -99,6 +106,21 @@ void advancePresentationTime(std::chrono::steady_clock::time_point& scheduledTim
     }
 }
 
+const char* presentationModeName(PresentationCommandMode mode) {
+    switch (mode) {
+    case PresentationCommandMode::RenderFrame:
+        return "RenderFrame";
+    case PresentationCommandMode::DisplayInterpolatedFrame:
+        return "DisplayInterpolatedFrame";
+    case PresentationCommandMode::DisplayCapturedSourceFrame:
+        return "DisplayCapturedSourceFrame";
+    case PresentationCommandMode::DisplayHeldSourceFrame:
+        return "DisplayHeldSourceFrame";
+    default:
+        return "Unknown";
+    }
+}
+
 }
 
 void VulkanNcnnRenderer::run() {
@@ -108,6 +130,7 @@ void VulkanNcnnRenderer::run() {
     std::cout << "[NCNN] disabled" << std::endl;
 #endif
 
+    loadNvtxFunctions();
     initWindow();
     initVulkan();
     mainLoop();
@@ -211,7 +234,9 @@ void VulkanNcnnRenderer::mainLoop() {
         drawFrame();
     }
 
+    pushNvtxRange("CPU Sync: Shutdown Device WaitIdle");
     vkDeviceWaitIdle(device);
+    popNvtxRange();
 }
 
 void VulkanNcnnRenderer::cleanup() {
@@ -286,6 +311,8 @@ void VulkanNcnnRenderer::cleanup() {
     glfwDestroyWindow(window);
 
     glfwTerminate();
+
+    unloadNvtxFunctions();
 }
 
 void VulkanNcnnRenderer::createCommandPool() {
@@ -313,6 +340,43 @@ void VulkanNcnnRenderer::loadDebugUtilsFunctions() {
         reinterpret_cast<PFN_vkQueueBeginDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkQueueBeginDebugUtilsLabelEXT"));
     vkQueueEndDebugUtilsLabelEXTFn =
         reinterpret_cast<PFN_vkQueueEndDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkQueueEndDebugUtilsLabelEXT"));
+}
+
+void VulkanNcnnRenderer::loadNvtxFunctions() {
+#if VULKAN_RENDERER_HAS_NVTX3
+    std::cout << "[Trace] NVTX v3 CPU ranges enabled" << std::endl;
+#else
+    std::cout << "[Trace] NVTX headers not found; CPU ranges disabled" << std::endl;
+#endif
+}
+
+void VulkanNcnnRenderer::unloadNvtxFunctions() {
+}
+
+void VulkanNcnnRenderer::pushNvtxRange(const std::string& name) {
+#if VULKAN_RENDERER_HAS_NVTX3
+    if (!name.empty()) {
+        nvtxRangePushA(name.c_str());
+    }
+#else
+    (void)name;
+#endif
+}
+
+void VulkanNcnnRenderer::popNvtxRange() {
+#if VULKAN_RENDERER_HAS_NVTX3
+    nvtxRangePop();
+#endif
+}
+
+void VulkanNcnnRenderer::markNvtxInstant(const std::string& name) {
+#if VULKAN_RENDERER_HAS_NVTX3
+    if (!name.empty()) {
+        nvtxMarkA(name.c_str());
+    }
+#else
+    (void)name;
+#endif
 }
 
 void VulkanNcnnRenderer::setDebugObjectName(VkObjectType objectType, uint64_t objectHandle, const std::string& name) {
@@ -374,8 +438,12 @@ void VulkanNcnnRenderer::copyOffscreenImageToSwapchain(VkCommandBuffer commandBu
                                                               uint32_t imageIndex,
                                                               uint32_t offscreenSlot) {
     auto& source = offscreenFrames[offscreenSlot];
+    pushNvtxRange(
+        "CPU Copy Record: Logical Frame " + debugRealFrameLabel(source.debugFrameId) +
+        " real [srcSlot=" + std::to_string(offscreenSlot) +
+        ", swapchain=" + std::to_string(imageIndex) + "]");
     const std::string copyLabel =
-        "Copy Real Frame " + debugRealFrameLabel(source.debugFrameId) +
+        "Copy Logical Frame " + debugRealFrameLabel(source.debugFrameId) +
         " to Swapchain [Offscreen Slot " + std::to_string(offscreenSlot) + "]";
     beginDebugLabel(commandBuffer, copyLabel, glm::vec4(0.2f, 0.8f, 1.0f, 1.0f));
 
@@ -434,6 +502,7 @@ void VulkanNcnnRenderer::copyOffscreenImageToSwapchain(VkCommandBuffer commandBu
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
     endDebugLabel(commandBuffer);
+    popNvtxRange();
 }
 
 void VulkanNcnnRenderer::resetFrameInterpolationDebugState() {
@@ -660,6 +729,11 @@ void VulkanNcnnRenderer::dropInterpolationTarget(uint32_t targetIndex, const std
         !ncnnOutputBuffers[target.outputIndex].inUseByGraphics &&
         !ncnnOutputBuffers[target.outputIndex].inUseByInference) {
         auto& output = ncnnOutputBuffers[target.outputIndex];
+        markNvtxInstant(
+            std::string("Slot Transition: output ") + std::to_string(target.outputIndex) +
+            " " + interpolationTargetStateName(target.state) +
+            " -> free [interp=" + debugInterpolatedFrameLabel(target.previousFrameId) +
+            ", reason=" + reason + "]");
         output.ready = false;
         output.debugPreviousFrameId = UINT64_MAX;
         output.debugCurrentFrameId = UINT64_MAX;
@@ -693,6 +767,11 @@ void VulkanNcnnRenderer::releaseObsoleteNcnnOutputBuffers() {
             continue;
         }
 
+        markNvtxInstant(
+            std::string("Slot Transition: output ") + std::to_string(target.outputIndex) +
+            " presenting -> free [interp=" + debugInterpolatedFrameLabel(target.previousFrameId) +
+            ", src=" + debugRealFrameLabel(target.previousFrameId) +
+            "+" + debugRealFrameLabel(target.currentFrameId) + "]");
         output.ready = false;
         output.debugPreviousFrameId = UINT64_MAX;
         output.debugCurrentFrameId = UINT64_MAX;
@@ -721,6 +800,9 @@ void VulkanNcnnRenderer::markDebugRealFramePresented(uint32_t sourceIndex) {
     }
 
     frame.debugPresented = true;
+    markNvtxInstant(
+        std::string("Slot Transition: offscreen ") + std::to_string(sourceIndex) +
+        " presenting -> presented [real=" + debugRealFrameLabel(frame.debugFrameId) + "]");
     debugLastPresentedFrameLabel = debugRealFrameLabel(frame.debugFrameId);
     if (frame.debugFrameId != UINT64_MAX) {
         debugLastPresentedTimelineStep = static_cast<int64_t>(frame.debugFrameId * 2);
@@ -753,6 +835,10 @@ void VulkanNcnnRenderer::processCapturedFrameForSlot(uint32_t frameSlot) {
     if (capture.size == 0) {
         return;
     }
+    markNvtxInstant(
+        std::string("Slot Transition: offscreen ") + std::to_string(captureSlot) +
+        " rendering -> ready [real=" + debugRealFrameLabel(capture.debugFrameId) +
+        ", frameSlot=" + std::to_string(frameSlot) + "]");
 #if HAS_NCNN
     if (!ncnnPresentationState.ncnnRealtimeInterpolationEnabled || !ncnnModelAttachedToRenderer) {
         return;
@@ -853,6 +939,9 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
         "Render Real Frame " + std::to_string(realFrameId) +
         " [Offscreen Slot " + std::to_string(offscreenSlot) + "]";
     beginDebugLabel(commandBuffer, realFrameLabel, glm::vec4(0.1f, 0.9f, 0.2f, 1.0f));
+    markNvtxInstant(
+        std::string("Slot Transition: offscreen ") + std::to_string(offscreenSlot) +
+        " free -> rendering [real=" + std::to_string(realFrameId) + "]");
     const bool renderedFrameIsExpected =
         static_cast<int64_t>(realFrameId * 2) == debugLastPresentedTimelineStep + 1;
     offscreenFrames[offscreenSlot].debugFrameId = realFrameId;
@@ -1146,17 +1235,22 @@ void VulkanNcnnRenderer::updateUniformBuffer(uint32_t currentImage) {
 }
 
 bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
+    pushNvtxRange(std::string("CPU Sync: acquire swapchain image [frameSlot=") + std::to_string(currentFrame) + "]");
     VkResult result = vkAcquireNextImageKHR(
         device,
         swapChain,
-        UINT64_MAX,
+        0,
         imageAvailableSemaphores[currentFrame],
         VK_NULL_HANDLE,
         &imageIndex
     );
+    popNvtxRange();
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
+        return false;
+    }
+    else if (result == VK_NOT_READY || result == VK_TIMEOUT) {
         return false;
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -1166,8 +1260,17 @@ bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
     return true;
 }
 
-void VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
-    vkWaitForFences(device, 1, &inFlightFences[frameSlot], VK_TRUE, UINT64_MAX);
+bool VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
+    pushNvtxRange(std::string("CPU Sync: query in-flight fence [frameSlot=") + std::to_string(frameSlot) + "]");
+    const VkResult fenceStatus = vkGetFenceStatus(device, inFlightFences[frameSlot]);
+    popNvtxRange();
+    if (fenceStatus == VK_NOT_READY) {
+        return false;
+    }
+    if (fenceStatus != VK_SUCCESS) {
+        throw std::runtime_error("failed to query in-flight frame fence!");
+    }
+
     for (uint32_t outputIndex = 0; outputIndex < ncnnOutputBuffers.size(); ++outputIndex) {
         auto& output = ncnnOutputBuffers[outputIndex];
         if (output.inUseByGraphics && output.graphicsFrameSlot == frameSlot) {
@@ -1180,16 +1283,22 @@ void VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
     updateWaitingInterpolationTargets();
 
 #if HAS_NCNN
+    pushNvtxRange(std::string("CPU Interpolation: poll RIFE jobs [frameSlot=") + std::to_string(frameSlot) + "]");
     pollAsyncNcnnInference();
+    popNvtxRange();
     if (ncnnPresentationState.ncnnRealtimeInterpolationEnabled) {
+        pushNvtxRange(std::string("CPU Interpolation: submit RIFE if ready [frameSlot=") + std::to_string(frameSlot) + "]");
         if (!submitAsyncNcnnInferenceIfReady() &&
             ncnnPresentationState.ncnnRunningJobCount == 0 &&
             !ncnnPresentationState.hasNcnnDisplayFrame &&
             !ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair) {
             ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = true;
         }
+        popNvtxRange();
     }
 #endif
+
+    return true;
 }
 
 void VulkanNcnnRenderer::setBenchmarkModeEnabled(bool enabled) {
@@ -1210,12 +1319,23 @@ void VulkanNcnnRenderer::setBenchmarkModeEnabled(bool enabled) {
 uint32_t VulkanNcnnRenderer::recordMainRenderCommands(uint32_t frameSlot,
                                                          uint32_t imageIndex,
                                                          PresentationCommandMode mode) {
+    pushNvtxRange(
+        std::string("CPU Record: graphics command buffer [frameSlot=") + std::to_string(frameSlot) +
+        ", swapchain=" + std::to_string(imageIndex) +
+        ", mode=" + presentationModeName(mode) + "]");
     vkResetFences(device, 1, &inFlightFences[frameSlot]);
     vkResetCommandBuffer(commandBuffers[frameSlot], 0);
-    return recordCommandBuffer(commandBuffers[frameSlot], imageIndex, mode);
+    const uint32_t capturedSlot = recordCommandBuffer(commandBuffers[frameSlot], imageIndex, mode);
+    popNvtxRange();
+    return capturedSlot;
 }
 
 void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot) {
+    pushNvtxRange(
+        std::string("CPU Submit: graphics queue [frameSlot=") + std::to_string(frameSlot) +
+        ", swapchain=" + std::to_string(imageIndex) +
+        ", capturedSlot=" + std::to_string(capturedNcnnSlot) +
+        ", logical=" + debugLastPresentedFrameLabel + "]");
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -1240,6 +1360,7 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
         submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[frameSlot]);
         endQueueDebugLabel(graphicsQueue);
     }
+    popNvtxRange();
     if (submitResult != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
@@ -1248,6 +1369,9 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
 }
 
 void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
+    pushNvtxRange(
+        std::string("CPU Present: queue present [swapchain=") + std::to_string(imageIndex) +
+        ", logical=" + debugLastPresentedFrameLabel + "]");
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
@@ -1262,8 +1386,12 @@ void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
     VkResult result = VK_SUCCESS;
     {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
+        const std::string presentLabel = "Queue Present Logical Frame " + debugLastPresentedFrameLabel;
+        beginQueueDebugLabel(presentQueue, presentLabel, glm::vec4(1.0f, 0.8f, 0.2f, 1.0f));
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
+        endQueueDebugLabel(presentQueue);
     }
+    popNvtxRange();
 
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
         recordPresentedFrameStats(pendingPresentedFrameKind);
@@ -1345,7 +1473,9 @@ void VulkanNcnnRenderer::drawFrame() {
     }
 
     const uint32_t frameSlot = currentFrame;
-    updateFrameState(frameSlot);
+    if (!updateFrameState(frameSlot)) {
+        return;
+    }
 
     uint32_t imageIndex;
     if (!acquireFrame(imageIndex)) {

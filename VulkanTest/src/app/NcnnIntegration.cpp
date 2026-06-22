@@ -521,7 +521,8 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
                                                    uint32_t imageIndex,
                                                    VkBuffer sourceBuffer,
                                                    VkAccessFlags sourceAccessMask,
-                                                   VkPipelineStageFlags sourceStageMask) {
+                                                   VkPipelineStageFlags sourceStageMask,
+                                                   const std::string& logicalFrameLabel) {
     VkImageMemoryBarrier toTransferDstBarrier{};
     toTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     // Presentation overwrites the entire acquired image, so its old contents
@@ -576,7 +577,7 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
         nullptr
     );
 
-    beginDebugLabel(commandBuffer, "Output Conversion", glm::vec4(0.9f, 0.4f, 1.0f, 1.0f));
+    beginDebugLabel(commandBuffer, "Output Conversion " + logicalFrameLabel, glm::vec4(0.9f, 0.4f, 1.0f, 1.0f));
     uint32_t markerWidth = 0;
     if (markInterpolatedFrames) {
         markerWidth = std::min(
@@ -682,8 +683,13 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
 
     const uint64_t presentedPreviousFrameId = selectedOutput.debugPreviousFrameId;
     const uint32_t targetIndex = findInterpolationTargetIndex(presentedPreviousFrameId);
+    pushNvtxRange(
+        "CPU Copy Record: Logical Frame " + debugInterpolatedFrameLabel(presentedPreviousFrameId) +
+        " interpolated [outputSlot=" +
+        std::to_string(ncnnPresentationState.ncnnPendingInterpolatedOutputIndex) +
+        ", swapchain=" + std::to_string(imageIndex) + "]");
     const std::string copyLabel =
-        "Copy Interpolated Frame " + debugInterpolatedFrameLabel(presentedPreviousFrameId) +
+        "Copy Logical Frame " + debugInterpolatedFrameLabel(presentedPreviousFrameId) +
         " to Swapchain [Output Slot " + std::to_string(ncnnPresentationState.ncnnPendingInterpolatedOutputIndex) + "]";
     beginDebugLabel(commandBuffer, copyLabel, glm::vec4(0.9f, 0.4f, 1.0f, 1.0f));
     copyNcnnBufferToSwapchain(
@@ -691,14 +697,22 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
         imageIndex,
         selectedOutput.gpuBuffer,
         VK_ACCESS_SHADER_WRITE_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        debugInterpolatedFrameLabel(presentedPreviousFrameId)
     );
     endDebugLabel(commandBuffer);
+    popNvtxRange();
     pendingPresentedFrameKind = PresentedFrameKind::Interpolated;
 
     selectedOutput.ready = false;
     selectedOutput.inUseByGraphics = true;
     selectedOutput.graphicsFrameSlot = currentFrame;
+    markNvtxInstant(
+        std::string("Slot Transition: output ") +
+        std::to_string(ncnnPresentationState.ncnnPendingInterpolatedOutputIndex) +
+        " ready -> presenting [interp=" + debugInterpolatedFrameLabel(presentedPreviousFrameId) +
+        ", src=" + debugRealFrameLabel(selectedOutput.debugPreviousFrameId) +
+        "+" + debugRealFrameLabel(selectedOutput.debugCurrentFrameId) + "]");
     markDebugInterpolatedFramePresented(presentedPreviousFrameId);
     if (targetIndex < ncnnInterpolationTargets.size()) {
         auto& target = ncnnInterpolationTargets[targetIndex];
@@ -832,7 +846,12 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
             continue;
         }
 
+        pushNvtxRange(
+            "CPU Interpolation Job " + debugInterpolatedFrameLabel(target.previousFrameId) +
+            ": wait for completion result [outputSlot=" +
+            std::to_string(target.outputIndex) + "]");
         const AsyncNcnnResult result = target.future.get();
+        popNvtxRange();
         if (result.outputIndex < ncnnOutputBuffers.size()) {
             ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
         }
@@ -874,6 +893,11 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
             --ncnnPresentationState.ncnnInferenceScaleDivisor;
         }
 
+        pushNvtxRange(
+            "CPU Interpolation Job " + debugInterpolatedFrameLabel(result.previousFrameId) +
+            ": mark output ready [outputSlot=" + std::to_string(result.outputIndex) +
+            ", src=" + debugRealFrameLabel(result.previousFrameId) +
+            "+" + debugRealFrameLabel(result.currentFrameId) + "]");
         ncnnOutputBuffers[result.outputIndex].ready = true;
         ncnnOutputBuffers[result.outputIndex].sequence = ncnnPresentationState.nextNcnnOutputSequence++;
         ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = result.previousFrameId;
@@ -885,6 +909,12 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
         ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = result.outputIndex;
         ncnnPresentationState.ncnnPendingSourceDisplayIndex = result.currentSourceIndex;
         ncnnPresentationState.hasNcnnDisplayFrame = true;
+        markNvtxInstant(
+            std::string("Slot Transition: output ") + std::to_string(result.outputIndex) +
+            " inference -> ready [interp=" + debugInterpolatedFrameLabel(result.previousFrameId) +
+            ", src=" + debugRealFrameLabel(result.previousFrameId) +
+            "+" + debugRealFrameLabel(result.currentFrameId) + "]");
+        popNvtxRange();
         ++readyCount;
 
         if (previousDivisor != ncnnPresentationState.ncnnInferenceScaleDivisor || (ncnnPresentationState.ncnnCompletedInferenceCount % 120) == 1) {
@@ -949,6 +979,18 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
             break;
         }
 
+        const uint64_t pendingPrevFrameId = ncnnInterpolationTargets[targetIndex].previousFrameId;
+        const uint64_t pendingCurrFrameId = ncnnInterpolationTargets[targetIndex].currentFrameId;
+        pushNvtxRange(
+            "CPU Interpolation Job " + debugInterpolatedFrameLabel(pendingPrevFrameId) +
+            ": wait for source frames [src=" + debugRealFrameLabel(pendingPrevFrameId) +
+            "+" + debugRealFrameLabel(pendingCurrFrameId) + "]");
+        popNvtxRange();
+
+        pushNvtxRange(
+            "CPU Interpolation Job " + debugInterpolatedFrameLabel(pendingPrevFrameId) +
+            ": acquire output slot [src=" + debugRealFrameLabel(pendingPrevFrameId) +
+            "+" + debugRealFrameLabel(pendingCurrFrameId) + "]");
         uint32_t outputIndex = UINT32_MAX;
         for (uint32_t i = 0; i < ncnnOutputBuffers.size(); ++i) {
             const auto& output = ncnnOutputBuffers[i];
@@ -991,8 +1033,10 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         }
 
         if (outputIndex == UINT32_MAX) {
+            popNvtxRange();
             break;
         }
+        popNvtxRange();
 
         auto& target = ncnnInterpolationTargets[targetIndex];
         const uint32_t prevIndex = target.previousSourceIndex;
@@ -1035,6 +1079,11 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         ncnnOutputBuffers[outputIndex].sequence = 0;
         ncnnOutputBuffers[outputIndex].debugPreviousFrameId = prevFrameId;
         ncnnOutputBuffers[outputIndex].debugCurrentFrameId = currFrameId;
+        markNvtxInstant(
+            std::string("Slot Transition: output ") + std::to_string(outputIndex) +
+            " free -> inference [interp=" + debugInterpolatedFrameLabel(prevFrameId) +
+            ", srcSlots=" + std::to_string(prevIndex) +
+            "+" + std::to_string(currIndex) + "]");
         ncnnPresentationState.hasNcnnGpuFramePair = false;
         ncnnPresentationState.ncnnHeldSourceDisplayIndex = prevIndex;
         ncnnPresentationState.ncnnInferenceRequestWaitingForFramePair = false;
@@ -1044,6 +1093,10 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         --pendingCount;
         startedAny = true;
         ncnnPresentationState.ncnnRunningJobCount = runningCount;
+
+        markNvtxInstant(
+            std::string("CPU Interpolation Job ") + debugInterpolatedFrameLabel(prevFrameId) +
+            ": async job queued [outputSlot=" + std::to_string(outputIndex) + "]");
 
         target.future = std::async(std::launch::async, [this,
                                                         prevImage,
@@ -1079,17 +1132,20 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
             result.interpolationTargetIndex = targetIndex;
 
             const auto start = std::chrono::high_resolution_clock::now();
+            pushNvtxRange(
+                "CPU Interpolation Job " + debugInterpolatedFrameLabel(prevFrameId) +
+                " full lifetime [src=" + debugRealFrameLabel(prevFrameId) +
+                "+" + debugRealFrameLabel(currFrameId) +
+                ", srcSlots=" + std::to_string(prevIndex) +
+                "+" + std::to_string(currIndex) +
+                ", outputSlot=" + std::to_string(outputIndex) + "]");
 
             const auto processFrames = [&]() {
+                pushNvtxRange(
+                    "CPU Interpolation Submit+Wait: RIFE " +
+                    debugInterpolatedFrameLabel(prevFrameId) +
+                    " [outputSlot=" + std::to_string(outputIndex) + "]");
                 const auto processStart = std::chrono::high_resolution_clock::now();
-                const std::string inferenceLabel =
-                    "RIFE " + std::to_string(prevFrameId) + " + " + std::to_string(currFrameId) +
-                    " -> " + debugInterpolatedFrameLabel(prevFrameId) +
-                    " [Output Slot " + std::to_string(outputIndex) + "]";
-                beginQueueDebugLabel(computeQueue, inferenceLabel, glm::vec4(0.9f, 0.2f, 1.0f, 1.0f));
-                beginQueueDebugLabel(computeQueue, "Input Conversion", glm::vec4(0.2f, 0.6f, 1.0f, 1.0f));
-                endQueueDebugLabel(computeQueue);
-                beginQueueDebugLabel(computeQueue, "NCNN Inference", glm::vec4(0.9f, 0.2f, 1.0f, 1.0f));
                 const int processRet = ncnnFrameInterpolator.processGpuRgbaFrames(
                     prevImage,
                     prevImageView,
@@ -1107,28 +1163,33 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
                     inferenceH,
                     0.5f
                 );
-                endQueueDebugLabel(computeQueue);
-                beginQueueDebugLabel(computeQueue, "Output Conversion", glm::vec4(0.9f, 0.5f, 0.2f, 1.0f));
-                endQueueDebugLabel(computeQueue);
-                endQueueDebugLabel(computeQueue);
                 result.rifeProcessMs = std::chrono::duration<double, std::milli>(
                     std::chrono::high_resolution_clock::now() - processStart).count();
+                popNvtxRange();
                 return processRet;
             };
 
-            if (MAX_NCNN_IN_FLIGHT == 1 && ncnnCanRunWithoutQueueMutex) {
-                result.processRet = processFrames();
-            }
-            else {
-                const auto queueWaitStart = std::chrono::high_resolution_clock::now();
+            const auto queueWaitStart = std::chrono::high_resolution_clock::now();
+            if (computeQueue == graphicsQueue || computeQueue == presentQueue) {
+                pushNvtxRange("CPU Sync: Wait Shared Vulkan Queue Mutex for RIFE");
                 std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
                 result.queueWaitMs = std::chrono::duration<double, std::milli>(
                     std::chrono::high_resolution_clock::now() - queueWaitStart).count();
+                popNvtxRange();
+                result.processRet = processFrames();
+            }
+            else {
+                pushNvtxRange("CPU Sync: Wait Compute Queue Mutex for RIFE");
+                std::lock_guard<std::mutex> queueLock(ncnnComputeQueueMutex);
+                result.queueWaitMs = std::chrono::duration<double, std::milli>(
+                    std::chrono::high_resolution_clock::now() - queueWaitStart).count();
+                popNvtxRange();
                 result.processRet = processFrames();
             }
 
             result.inferenceMs = std::chrono::duration<double, std::milli>(
                 std::chrono::high_resolution_clock::now() - start).count();
+            popNvtxRange();
             return result;
         });
     }

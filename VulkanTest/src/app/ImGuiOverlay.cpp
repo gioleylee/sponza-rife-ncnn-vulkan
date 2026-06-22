@@ -64,7 +64,9 @@ void VulkanNcnnRenderer::initializeImGuiResources() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     ImGui::Render();
+    pushNvtxRange("CPU Sync: Dear ImGui Font Upload Device WaitIdle");
     vkDeviceWaitIdle(device);
+    popNvtxRange();
 }
 
 void VulkanNcnnRenderer::createImGuiRenderPass() {
@@ -188,6 +190,11 @@ void VulkanNcnnRenderer::beginImGuiFrame() {
 
         ImGui::TextUnformatted("Overlay");
         ImGui::Checkbox("FPS counter", &showFpsCounter);
+        bool unlimited = unlimitedFramerate;
+        if (ImGui::Checkbox("Unlimited framerate", &unlimited)) {
+            unlimitedFramerate = unlimited;
+            framebufferResized = true;
+        }
         ImGui::Separator();
 
         ImGui::TextUnformatted("Debug Views");
@@ -268,7 +275,9 @@ void VulkanNcnnRenderer::renderImGuiOverlay(VkCommandBuffer commandBuffer, uint3
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = swapChainExtent;
 
+    beginDebugLabel(commandBuffer, "Render Dear ImGui Overlay", glm::vec4(1.0f, 0.7f, 0.2f, 1.0f));
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
+    endDebugLabel(commandBuffer);
 }

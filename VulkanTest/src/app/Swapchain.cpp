@@ -73,7 +73,9 @@ void VulkanNcnnRenderer::recreateSwapChain() {
         glfwWaitEvents();
     }
 
+    pushNvtxRange("CPU Sync: Swapchain Recreation Device WaitIdle");
     vkDeviceWaitIdle(device);
+    popNvtxRange();
 
     cleanupImGuiFramebuffers();
 
@@ -166,6 +168,20 @@ VkSurfaceFormatKHR VulkanNcnnRenderer::chooseSwapSurfaceFormat(const std::vector
 }
 
 VkPresentModeKHR VulkanNcnnRenderer::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+    if (unlimitedFramerate) {
+        for (const auto& availablePresentMode : availablePresentModes) {
+            if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                return availablePresentMode;
+            }
+        }
+
+        for (const auto& availablePresentMode : availablePresentModes) {
+            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+                return availablePresentMode;
+            }
+        }
+    }
+
     for (const auto& availablePresentMode : availablePresentModes) {
         if (availablePresentMode == VK_PRESENT_MODE_FIFO_KHR) {
             return availablePresentMode;

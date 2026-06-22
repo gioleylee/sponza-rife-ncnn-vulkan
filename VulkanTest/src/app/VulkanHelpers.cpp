@@ -63,7 +63,9 @@ void VulkanNcnnRenderer::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDe
     {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        pushNvtxRange("CPU Sync: One-Shot Copy Buffer Queue WaitIdle");
         vkQueueWaitIdle(graphicsQueue);
+        popNvtxRange();
     }
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
@@ -162,7 +164,9 @@ void VulkanNcnnRenderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
     {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        pushNvtxRange("CPU Sync: One-Shot Command Queue WaitIdle");
         vkQueueWaitIdle(graphicsQueue);
+        popNvtxRange();
     }
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);

@@ -94,6 +94,7 @@ private:
     uint32_t presentQueueIndex = 0;
     uint32_t computeQueueIndex = 0;
     std::mutex vulkanQueueMutex;
+    std::mutex ncnnComputeQueueMutex;
 #if defined(_WIN32)
     PFN_vkGetMemoryWin32HandleKHR vkGetMemoryWin32HandleKHRFn = nullptr;
 #endif
@@ -239,6 +240,7 @@ private:
     bool markInterpolatedFrames = false;
     bool yKeyPressed = false;
     bool showFpsCounter = true;
+    bool unlimitedFramerate = false;
     bool benchmarkModeEnabled = false;
     bool uKeyPressed = false;
     bool imguiVisible = false;
@@ -297,6 +299,16 @@ private:
     void setupDebugMessenger();
 
     void loadDebugUtilsFunctions();
+
+    void loadNvtxFunctions();
+
+    void unloadNvtxFunctions();
+
+    void pushNvtxRange(const std::string& name);
+
+    void popNvtxRange();
+
+    void markNvtxInstant(const std::string& name);
 
     void setDebugObjectName(VkObjectType objectType, uint64_t objectHandle, const std::string& name);
 
@@ -398,7 +410,7 @@ private:
 
     bool acquireFrame(uint32_t& imageIndex);
 
-    void updateFrameState(uint32_t frameSlot);
+    bool updateFrameState(uint32_t frameSlot);
 
     void setBenchmarkModeEnabled(bool enabled);
 

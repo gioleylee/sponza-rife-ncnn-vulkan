@@ -310,13 +310,19 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     presentQueueFamilyIndex = indices.presentFamily.value();
     computeQueueFamilyIndex = indices.computeFamily.value();
 
-    const auto chooseRendererQueueIndex = [&](uint32_t queueFamilyIndex) {
-        return queueFamilyProperties[queueFamilyIndex].queueCount > 1 ? 1u : 0u;
+    computeQueueIndex = 0;
+
+    const auto preferNonComputeQueueIndex = [&](uint32_t queueFamilyIndex) {
+        if (queueFamilyIndex == computeQueueFamilyIndex &&
+            queueFamilyProperties[queueFamilyIndex].queueCount > 1) {
+            return 1u;
+        }
+
+        return 0u;
     };
 
-    graphicsQueueIndex = chooseRendererQueueIndex(graphicsQueueFamilyIndex);
-    presentQueueIndex = chooseRendererQueueIndex(presentQueueFamilyIndex);
-    computeQueueIndex = chooseRendererQueueIndex(computeQueueFamilyIndex);
+    graphicsQueueIndex = preferNonComputeQueueIndex(graphicsQueueFamilyIndex);
+    presentQueueIndex = preferNonComputeQueueIndex(presentQueueFamilyIndex);
 
     vkGetDeviceQueue(device, graphicsQueueFamilyIndex, graphicsQueueIndex, &graphicsQueue);
     vkGetDeviceQueue(device, presentQueueFamilyIndex, presentQueueIndex, &presentQueue);
@@ -324,6 +330,26 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(graphicsQueue), "Graphics Queue");
     setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(presentQueue), "Present Queue");
     setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(computeQueue), "Compute Queue");
+
+    std::cout << "[Vulkan] graphics queue: family=" << graphicsQueueFamilyIndex
+              << ", index=" << graphicsQueueIndex
+              << ", handle=" << reinterpret_cast<const void*>(graphicsQueue) << std::endl;
+    std::cout << "[Vulkan] present queue: family=" << presentQueueFamilyIndex
+              << ", index=" << presentQueueIndex
+              << ", handle=" << reinterpret_cast<const void*>(presentQueue) << std::endl;
+    std::cout << "[Vulkan] compute queue: family=" << computeQueueFamilyIndex
+              << ", index=" << computeQueueIndex
+              << ", handle=" << reinterpret_cast<const void*>(computeQueue) << std::endl;
+
+    if (computeQueue == graphicsQueue || computeQueue == presentQueue) {
+        std::cout << "[Vulkan] warning: compute queue aliases a renderer queue; "
+                  << "this device exposes no distinct queue handle for the selected families" << std::endl;
+    }
+    else {
+        std::cout << "[Vulkan] using distinct compute queue handle"
+                  << " (family=" << computeQueueFamilyIndex
+                  << ", index=" << computeQueueIndex << ")" << std::endl;
+    }
 
 #if defined(_WIN32)
     vkGetMemoryWin32HandleKHRFn =

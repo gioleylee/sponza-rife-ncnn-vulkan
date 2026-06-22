@@ -85,6 +85,9 @@
     <Filter Include="Third Party\RIFE">
       <UniqueIdentifier>{8F08E9CB-E54A-4864-AF4B-DFDC9FC2AA07}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Third Party\NVTX">
+      <UniqueIdentifier>{05BA22DF-F9C8-41C7-87E4-FB7A2887545F}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Third Party\Single Header Libraries">
       <UniqueIdentifier>{0E0E3953-C578-48EB-89B9-48B3C9C1E4D8}</UniqueIdentifier>
     </Filter>
@@ -203,6 +206,12 @@
     <ClInclude Include="third_party\rife\rife.h">
       <Filter>Third Party\RIFE</Filter>
     </ClInclude>
+    <ClInclude Include="third_party\nvtx\c\include\nvtx3\nvToolsExt.h">
+      <Filter>Third Party\NVTX</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party\nvtx\c\include\nvtx3\nvtx3.hpp">
+      <Filter>Third Party\NVTX</Filter>
+    </ClInclude>
     <ClInclude Include="third_party\json.hpp">
       <Filter>Third Party\Single Header Libraries</Filter>
     </ClInclude>
@@ -213,6 +222,9 @@
   <ItemGroup>
     <None Include="ncnn_setup.md">
       <Filter>Documentation</Filter>
+    </None>
+    <None Include="third_party\nvtx\LICENSE.txt">
+      <Filter>Third Party\NVTX</Filter>
     </None>
     <None Include="shaders\compile.bat">
       <Filter>Resource Files\Shaders</Filter>

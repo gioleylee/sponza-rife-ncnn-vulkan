@@ -31,7 +31,8 @@ void copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer,
                                uint32_t imageIndex,
                                VkBuffer sourceBuffer,
                                VkAccessFlags sourceAccessMask,
-                               VkPipelineStageFlags sourceStageMask);
+                               VkPipelineStageFlags sourceStageMask,
+                               const std::string& logicalFrameLabel);
 
 void displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 

@@ -211,6 +211,18 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     enabledFeatures2.features = deviceFeatures;
 
     void* featureChain = nullptr;
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
+    timelineSemaphoreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    VkPhysicalDeviceFeatures2 timelineFeatureQuery{};
+    timelineFeatureQuery.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    timelineFeatureQuery.pNext = &timelineSemaphoreFeatures;
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &timelineFeatureQuery);
+    if (timelineSemaphoreFeatures.timelineSemaphore != VK_TRUE) {
+        throw std::runtime_error("timeline semaphores are required for NCNN frame interpolation synchronization");
+    }
+    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
+    timelineSemaphoreFeatures.pNext = featureChain;
+    featureChain = &timelineSemaphoreFeatures;
 #if HAS_NCNN
     VkPhysicalDevice8BitStorageFeatures enabled8BitStorageFeatures{};
     enabled8BitStorageFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES;

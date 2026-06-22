@@ -1,4 +1,5 @@
 #include "VulkanFramePacer.h"
+#include "CpuProfiler.h"
 
 #include <algorithm>
 #include <utility>
@@ -79,6 +80,11 @@ void VulkanFramePacer::enqueue(VulkanPresentJob job) {
     {
         std::lock_guard<std::mutex> lock(interpolationMutex);
         interpolationQueue.push_back(std::move(job));
+        const auto nativeCount = std::count_if(
+            interpolationQueue.begin(), interpolationQueue.end(), [](const VulkanPresentJob& queued) {
+                return queued.frameKind == PresentedFrameKind::Real;
+            });
+        PROFILE_PLOT("Native Frame Queue Size", static_cast<int64_t>(nativeCount));
     }
     interpolationCondition.notify_one();
 }
@@ -105,10 +111,13 @@ void VulkanFramePacer::pause() {
 
     {
         std::unique_lock<std::mutex> interpolationLock(interpolationMutex);
-        interpolationQueue.clear();
-        interpolationIdleCondition.wait(interpolationLock, [this]() {
-            return !interpolationWorkActive;
-        });
+        {
+            PROFILE_ZONE("Wait Interpolation Thread Idle");
+            interpolationQueue.clear();
+            interpolationIdleCondition.wait(interpolationLock, [this]() {
+                return !interpolationWorkActive;
+            });
+        }
         pendingGenerated.reset();
     }
 
@@ -118,9 +127,12 @@ void VulkanFramePacer::pause() {
     }
 
     std::unique_lock<std::mutex> presentLock(presentMutex);
-    presentIdleCondition.wait(presentLock, [this]() {
-        return !presentCallActive;
-    });
+    {
+        PROFILE_ZONE("Wait Present Thread Idle");
+        presentIdleCondition.wait(presentLock, [this]() {
+            return !presentCallActive;
+        });
+    }
 }
 
 void VulkanFramePacer::resume(uint64_t swapchainGeneration) {
@@ -141,13 +153,17 @@ void VulkanFramePacer::resume(uint64_t swapchainGeneration) {
 }
 
 void VulkanFramePacer::interpolationLoop() {
+    PROFILE_THREAD("InterpolationThread");
     while (running.load()) {
         VulkanPresentJob job;
         {
             std::unique_lock<std::mutex> lock(interpolationMutex);
-            interpolationCondition.wait(lock, [this]() {
-                return !running.load() || (!paused.load() && !interpolationQueue.empty());
-            });
+            {
+                PROFILE_ZONE("Wait Native Frame Pair");
+                interpolationCondition.wait(lock, [this]() {
+                    return !running.load() || (!paused.load() && !interpolationQueue.empty());
+                });
+            }
 
             if (!running.load()) {
                 break;
@@ -250,13 +266,18 @@ void VulkanFramePacer::processInterpolationJob(VulkanPresentJob job) {
 }
 
 void VulkanFramePacer::presentLoop() {
+    PROFILE_THREAD("PresentThread");
     while (running.load()) {
         TimedPresentJob timedJob;
+        double pacingWaitMs = 0.0;
         {
             std::unique_lock<std::mutex> lock(presentMutex);
-            presentCondition.wait(lock, [this]() {
-                return !running.load() || (!paused.load() && !presentQueue.empty());
-            });
+            {
+                PROFILE_ZONE("Wait Present Queue");
+                presentCondition.wait(lock, [this]() {
+                    return !running.load() || (!paused.load() && !presentQueue.empty());
+                });
+            }
 
             if (!running.load()) {
                 break;
@@ -266,10 +287,17 @@ void VulkanFramePacer::presentLoop() {
             }
 
             const auto targetTime = presentQueue.front().targetTime;
-            presentCondition.wait_until(lock, targetTime, [this, targetTime]() {
-                return !running.load() || paused.load() || presentQueue.empty() ||
-                    presentQueue.front().targetTime != targetTime;
-            });
+            const auto pacingWaitStart = Clock::now();
+            {
+                PROFILE_ZONE("Pacing Wait");
+                presentCondition.wait_until(lock, targetTime, [this, targetTime]() {
+                    return !running.load() || paused.load() || presentQueue.empty() ||
+                        presentQueue.front().targetTime != targetTime;
+                });
+            }
+            pacingWaitMs = std::chrono::duration<double, std::milli>(
+                Clock::now() - pacingWaitStart).count();
+            PROFILE_PLOT("Pacing Wait (ms)", pacingWaitMs);
 
             if (!running.load()) {
                 break;
@@ -279,16 +307,44 @@ void VulkanFramePacer::presentLoop() {
                 continue;
             }
 
-            timedJob = std::move(presentQueue.front());
-            presentQueue.pop_front();
+            {
+                PROFILE_ZONE("Select Present Job");
+                timedJob = std::move(presentQueue.front());
+                presentQueue.pop_front();
+            }
+            PROFILE_PLOT("Present Queue Size", static_cast<int64_t>(presentQueue.size()));
             presentCallActive = true;
         }
 
         VkResult result = VK_ERROR_DEVICE_LOST;
+        const auto presentStart = Clock::now();
         if (timedJob.job.swapchainGeneration == activeSwapchainGeneration.load() &&
             presentCallback) {
             result = presentCallback(timedJob.job);
         }
+        const auto presentEnd = Clock::now();
+        PROFILE_PLOT("End-to-End Present Job Latency (ms)",
+            std::chrono::duration<double, std::milli>(
+                presentEnd - timedJob.job.readyTime).count());
+        if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+            const char kind =
+                timedJob.job.frameKind == PresentedFrameKind::Interpolated ? 'G' : 'N';
+            const uint64_t id =
+                timedJob.job.frameKind == PresentedFrameKind::Interpolated
+                    ? timedJob.job.previousNativeFrameId
+                    : timedJob.job.currentNativeFrameId;
+            const std::string message =
+                "Presented seq=" + std::to_string(timedJob.job.presentSequenceId) +
+                " " + kind + std::to_string(id) +
+                (kind == 'G' ? ".5" : "");
+            PROFILE_MESSAGE(message);
+        }
+        if (!isUnset(previousActualPresentTime)) {
+            const double presentIntervalMs = std::chrono::duration<double, std::milli>(
+                presentStart - previousActualPresentTime).count();
+            PROFILE_PLOT("Present Interval (ms)", presentIntervalMs);
+        }
+        previousActualPresentTime = presentStart;
 
         {
             std::lock_guard<std::mutex> lock(completionMutex);
@@ -320,19 +376,34 @@ void VulkanFramePacer::queueTimedJob(VulkanPresentJob job, Clock::time_point tar
         return;
     }
 
+    job.presentSequenceId = nextPresentSequenceId.fetch_add(1);
+    const char kind = job.frameKind == PresentedFrameKind::Interpolated ? 'G' : 'N';
+    const uint64_t id =
+        job.frameKind == PresentedFrameKind::Interpolated
+            ? job.previousNativeFrameId
+            : job.currentNativeFrameId;
+    const std::string message =
+        "Enqueued seq=" + std::to_string(job.presentSequenceId) +
+        " " + kind + std::to_string(id) +
+        (kind == 'G' ? ".5" : "");
+    PROFILE_MESSAGE(message);
+
     {
         std::lock_guard<std::mutex> lock(presentMutex);
         presentQueue.push_back({ std::move(job), targetTime });
+        PROFILE_PLOT("Present Queue Size", static_cast<int64_t>(presentQueue.size()));
     }
     presentCondition.notify_one();
 }
 
 void VulkanFramePacer::queueNativeOnly(VulkanPresentJob job, bool repeatedNative) {
+    PROFILE_ZONE("Enqueue Native Present Job");
     const auto interval = repeatedNative ? halfFrameInterval() : nativeFrameInterval();
     queueTimedJob(std::move(job), nextTarget(interval));
 }
 
 void VulkanFramePacer::queueGeneratedAndNative(VulkanPresentJob generated, VulkanPresentJob native) {
+    PROFILE_ZONE("Enqueue Generated + Native Present Jobs");
     const auto halfInterval = halfFrameInterval();
     const auto generatedTarget = nextTarget(halfInterval);
     const auto nativeTarget = nextTarget(halfInterval);

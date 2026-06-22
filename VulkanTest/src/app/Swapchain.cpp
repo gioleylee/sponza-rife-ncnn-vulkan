@@ -1,5 +1,6 @@
 // Owns swapchain creation, image views, framebuffers, cleanup, and recreation.
 #include "VulkanNcnnRenderer.h"
+#include "CpuProfiler.h"
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -60,12 +61,19 @@ void VulkanNcnnRenderer::createSwapChain() {
     vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
     swapChainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+    for (uint32_t i = 0; i < imageCount; ++i) {
+        setDebugObjectName(
+            VK_OBJECT_TYPE_IMAGE,
+            reinterpret_cast<uint64_t>(swapChainImages[i]),
+            "Swapchain Image " + std::to_string(i));
+    }
 
     swapChainImageFormat = surfaceFormat.format;
     swapChainExtent = extent;
 }
 
 void VulkanNcnnRenderer::recreateSwapChain() {
+    PROFILE_ZONE("Swapchain Recreation");
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     while (width == 0 || height == 0) {
@@ -78,7 +86,12 @@ void VulkanNcnnRenderer::recreateSwapChain() {
     }
 
     pushNvtxRange("CPU Sync: Swapchain Recreation Device WaitIdle");
-    vkDeviceWaitIdle(device);
+    {
+        PROFILE_ZONE("vkDeviceWaitIdle - Swapchain Recreation");
+        // Swapchain-sized images, descriptors, and framebuffers are destroyed
+        // together, so recreation requires a full device drain.
+        vkDeviceWaitIdle(device);
+    }
     popNvtxRange();
 
     cleanupImGuiFramebuffers();
@@ -98,6 +111,11 @@ void VulkanNcnnRenderer::recreateSwapChain() {
         if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
             throw std::runtime_error("failed to recreate render-finished semaphore for swapchain image!");
         }
+        const uint32_t index = static_cast<uint32_t>(&semaphore - renderFinishedSemaphores.data());
+        setDebugObjectName(
+            VK_OBJECT_TYPE_SEMAPHORE,
+            reinterpret_cast<uint64_t>(semaphore),
+            "Render Finished Semaphore Swapchain Image " + std::to_string(index));
     }
     createImageViews();
     createImGuiFramebuffers();

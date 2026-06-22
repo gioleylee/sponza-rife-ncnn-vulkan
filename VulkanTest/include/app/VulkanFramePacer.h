@@ -18,6 +18,9 @@ struct VulkanPresentJob {
     VkSemaphore waitSemaphore = VK_NULL_HANDLE;
     uint32_t imageIndex = 0;
     uint64_t swapchainGeneration = 0;
+    uint64_t presentSequenceId = 0;
+    uint64_t previousNativeFrameId = UINT64_MAX;
+    uint64_t currentNativeFrameId = UINT64_MAX;
     int64_t timelineStep = -1;
     PresentedFrameKind frameKind = PresentedFrameKind::None;
     std::string label;
@@ -100,10 +103,12 @@ private:
     std::atomic<bool> interpolationEnabled = false;
     std::atomic<bool> resetInterpolationTimeline = false;
     std::atomic<uint64_t> activeSwapchainGeneration = 0;
+    std::atomic<uint64_t> nextPresentSequenceId = 1;
 
     std::optional<VulkanPresentJob> pendingGenerated;
     std::deque<Clock::duration> nativeFrameSamples;
     Clock::time_point previousNativeReadyTime{};
     int64_t previousNativeTimelineStep = -1;
     Clock::time_point lastScheduledPresentTime{};
+    Clock::time_point previousActualPresentTime{};
 };

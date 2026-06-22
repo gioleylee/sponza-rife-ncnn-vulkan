@@ -1,5 +1,6 @@
 void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                  VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+                  VkBuffer& buffer, VkDeviceMemory& bufferMemory,
+                  const std::vector<uint32_t>& queueFamilyIndices = {});
 
 void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
@@ -11,7 +12,8 @@ void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat f
     VkImageTiling tiling, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties,
     VkImage& image, VkDeviceMemory& imageMemory,
-    VkImageCreateFlags flags = 0);
+    VkImageCreateFlags flags = 0,
+    const std::vector<uint32_t>& queueFamilyIndices = {});
 
 VkCommandBuffer beginSingleTimeCommands();
 

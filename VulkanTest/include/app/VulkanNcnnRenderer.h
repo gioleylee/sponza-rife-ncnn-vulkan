@@ -16,6 +16,7 @@
 #include <glm/gtc/constants.hpp>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <future>
@@ -60,6 +61,7 @@
 #endif
 
 #include "NcnnFrameInterpolator.h"
+#include "CpuProfiler.h"
 #include "VulkanFramePacer.h"
 
 #include "AppTypes.h"
@@ -97,6 +99,15 @@ private:
     std::mutex vulkanQueueMutex;
     std::mutex swapchainOperationMutex;
     std::mutex ncnnComputeQueueMutex;
+    VkSemaphore nativeFrameTimelineSemaphore = VK_NULL_HANDLE;
+    VkSemaphore interpolationTimelineSemaphore = VK_NULL_HANDLE;
+    VkCommandPool ncnnInteropCommandPool = VK_NULL_HANDLE;
+    VkCommandBuffer ncnnInteropCommandBuffer = VK_NULL_HANDLE;
+    ProfileGpuContext tracyGraphicsContext = nullptr;
+    ProfileGpuContext tracyComputeContext = nullptr;
+    uint64_t nextNativeFrameTimelineValue = 1;
+    std::atomic<uint64_t> nextInterpolationTimelineValue = 1;
+    uint64_t pendingGraphicsInterpolationWaitValue = 0;
     VulkanFramePacer framePacer;
     uint64_t swapchainGeneration = 1;
     bool framePacerStarted = false;
@@ -297,6 +308,10 @@ private:
 
     void shutdownFramePacer();
 
+    void initializeTracyGpuContexts();
+
+    void shutdownTracyGpuContexts();
+
     void mainLoop();
 
     void cleanup();
@@ -428,6 +443,10 @@ private:
                                       PresentationCommandMode mode);
 
     void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot);
+
+    void waitForNativeFramesOnNcnnQueue(uint64_t timelineValue);
+
+    void signalInterpolationOnNcnnQueue(uint64_t timelineValue);
 
     void handlePresentation(uint32_t imageIndex);
 

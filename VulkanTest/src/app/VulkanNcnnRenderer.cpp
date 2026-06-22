@@ -26,6 +26,7 @@
 #include <utility>
 
 #include "VulkanNcnnRenderer.h"
+#include "CpuProfiler.h"
 
 #if __has_include(<nvtx3/nvToolsExt.h>)
 #include <nvtx3/nvToolsExt.h>
@@ -205,6 +206,7 @@ void VulkanNcnnRenderer::initializeDescriptorResources() {
 void VulkanNcnnRenderer::initializeSyncResources() {
     createCommandBuffers();
     createSyncObjects();
+    initializeTracyGpuContexts();
     initializeFramePacer();
 }
 
@@ -232,7 +234,34 @@ void VulkanNcnnRenderer::shutdownFramePacer() {
     framePacerStarted = false;
 }
 
+void VulkanNcnnRenderer::initializeTracyGpuContexts() {
+#if defined(ENABLE_TRACY)
+    tracyGraphicsContext =
+        PROFILE_GPU_CONTEXT(physicalDevice, device, graphicsQueue, commandBuffers[0]);
+    PROFILE_GPU_CONTEXT_NAME(tracyGraphicsContext, "Vulkan Graphics");
+
+    tracyComputeContext =
+        PROFILE_GPU_CONTEXT(physicalDevice, device, computeQueue, ncnnInteropCommandBuffer);
+    PROFILE_GPU_CONTEXT_NAME(tracyComputeContext, "NCNN Compute Queue");
+#endif
+}
+
+void VulkanNcnnRenderer::shutdownTracyGpuContexts() {
+#if defined(ENABLE_TRACY)
+    if (tracyComputeContext) {
+        PROFILE_GPU_DESTROY(tracyComputeContext);
+        tracyComputeContext = nullptr;
+    }
+    if (tracyGraphicsContext) {
+        PROFILE_GPU_DESTROY(tracyGraphicsContext);
+        tracyGraphicsContext = nullptr;
+    }
+#endif
+}
+
 void VulkanNcnnRenderer::mainLoop() {
+    PROFILE_THREAD("RenderThread");
+    PROFILE_ZONE("Main Render Loop");
     auto lastTime = std::chrono::steady_clock::now();
 
     while (!glfwWindowShouldClose(window)) {
@@ -257,7 +286,11 @@ void VulkanNcnnRenderer::mainLoop() {
     // safely once no pacing thread can enter vkQueuePresentKHR.
     shutdownFramePacer();
     pushNvtxRange("CPU Sync: Shutdown Device WaitIdle");
-    vkDeviceWaitIdle(device);
+    {
+        PROFILE_ZONE("vkDeviceWaitIdle - Shutdown");
+        // Shutdown-only synchronization before Vulkan resource destruction.
+        vkDeviceWaitIdle(device);
+    }
     popNvtxRange();
 }
 
@@ -266,6 +299,7 @@ void VulkanNcnnRenderer::cleanup() {
     waitForAsyncNcnnInference();
     shutdownNcnn();
 #endif
+    shutdownTracyGpuContexts();
     cleanupImGui();
     cleanupSwapChain();
 
@@ -317,6 +351,15 @@ void VulkanNcnnRenderer::cleanup() {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
         vkDestroyFence(device, inFlightFences[i], nullptr);
+    }
+    if (nativeFrameTimelineSemaphore) {
+        vkDestroySemaphore(device, nativeFrameTimelineSemaphore, nullptr);
+    }
+    if (interpolationTimelineSemaphore) {
+        vkDestroySemaphore(device, interpolationTimelineSemaphore, nullptr);
+    }
+    if (ncnnInteropCommandPool) {
+        vkDestroyCommandPool(device, ncnnInteropCommandPool, nullptr);
     }
 
     vkDestroyCommandPool(device, commandPool, nullptr);
@@ -459,6 +502,7 @@ void VulkanNcnnRenderer::endQueueDebugLabel(VkQueue queue) {
 void VulkanNcnnRenderer::copyOffscreenImageToSwapchain(VkCommandBuffer commandBuffer,
                                                               uint32_t imageIndex,
                                                               uint32_t offscreenSlot) {
+    PROFILE_GPU_ZONE(tracyGraphicsContext, commandBuffer, "Native Frame Copy + Layout Transitions");
     auto& source = offscreenFrames[offscreenSlot];
     pushNvtxRange(
         "CPU Copy Record: Logical Frame " + debugRealFrameLabel(source.debugFrameId) +
@@ -760,6 +804,7 @@ void VulkanNcnnRenderer::dropInterpolationTarget(uint32_t targetIndex, const std
         output.debugPreviousFrameId = UINT64_MAX;
         output.debugCurrentFrameId = UINT64_MAX;
         output.sequence = 0;
+        output.interpolationReadyTimelineValue = 0;
         target.outputIndex = UINT32_MAX;
     }
 
@@ -798,6 +843,7 @@ void VulkanNcnnRenderer::releaseObsoleteNcnnOutputBuffers() {
         output.debugPreviousFrameId = UINT64_MAX;
         output.debugCurrentFrameId = UINT64_MAX;
         output.sequence = 0;
+        output.interpolationReadyTimelineValue = 0;
         target.state = InterpolationTargetState::Released;
         target.outputIndex = UINT32_MAX;
     }
@@ -921,6 +967,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     if (mode == PresentationCommandMode::DisplayInterpolatedFrame) {
         displayNcnnFrameOnSwapchain(commandBuffer, imageIndex);
         renderImGuiOverlay(commandBuffer, imageIndex);
+        PROFILE_GPU_COLLECT(tracyGraphicsContext, commandBuffer);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -932,6 +979,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     if (mode == PresentationCommandMode::DisplayCapturedSourceFrame) {
         displayCapturedNcnnSourceOnSwapchain(commandBuffer, imageIndex);
         renderImGuiOverlay(commandBuffer, imageIndex);
+        PROFILE_GPU_COLLECT(tracyGraphicsContext, commandBuffer);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -943,6 +991,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     if (mode == PresentationCommandMode::DisplayHeldSourceFrame) {
         displayNcnnSourceBufferOnSwapchain(commandBuffer, imageIndex, ncnnPresentationState.ncnnHeldSourceDisplayIndex);
         renderImGuiOverlay(commandBuffer, imageIndex);
+        PROFILE_GPU_COLLECT(tracyGraphicsContext, commandBuffer);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -951,6 +1000,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
         return UINT32_MAX;
     }
 
+    PROFILE_ZONE("Native Frame Rendering");
     const uint32_t offscreenSlot = findAvailableOffscreenFrameSlot();
     if (offscreenSlot == UINT32_MAX) {
         throw std::runtime_error("offscreen frame history ring is exhausted!");
@@ -986,6 +1036,8 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     renderPassInfo.clearValueCount = 5;
     renderPassInfo.pClearValues = clearValues;
 
+    {
+    PROFILE_GPU_ZONE(tracyGraphicsContext, commandBuffer, "Native Offscreen Render");
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
@@ -1101,6 +1153,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
+    }
     endDebugLabel(commandBuffer);
 
 #if HAS_NCNN
@@ -1164,6 +1217,7 @@ uint32_t VulkanNcnnRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer,
     }
 
     renderImGuiOverlay(commandBuffer, imageIndex);
+    PROFILE_GPU_COLLECT(tracyGraphicsContext, commandBuffer);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");
@@ -1179,6 +1233,49 @@ void VulkanNcnnRenderer::createSyncObjects() {
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkSemaphoreTypeCreateInfo timelineTypeInfo{};
+    timelineTypeInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timelineTypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timelineTypeInfo.initialValue = 0;
+    VkSemaphoreCreateInfo timelineSemaphoreInfo{};
+    timelineSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    timelineSemaphoreInfo.pNext = &timelineTypeInfo;
+    if (vkCreateSemaphore(device, &timelineSemaphoreInfo, nullptr, &nativeFrameTimelineSemaphore) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create NCNN timeline semaphores!");
+    }
+    if (vkCreateSemaphore(device, &timelineSemaphoreInfo, nullptr, &interpolationTimelineSemaphore) != VK_SUCCESS) {
+        vkDestroySemaphore(device, nativeFrameTimelineSemaphore, nullptr);
+        nativeFrameTimelineSemaphore = VK_NULL_HANDLE;
+        throw std::runtime_error("failed to create NCNN timeline semaphores!");
+    }
+    setDebugObjectName(VK_OBJECT_TYPE_SEMAPHORE,
+        reinterpret_cast<uint64_t>(nativeFrameTimelineSemaphore),
+        "Native Frame Ready Timeline");
+    setDebugObjectName(VK_OBJECT_TYPE_SEMAPHORE,
+        reinterpret_cast<uint64_t>(interpolationTimelineSemaphore),
+        "Interpolation Ready Timeline");
+
+    VkCommandPoolCreateInfo interopPoolInfo{};
+    interopPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    interopPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    interopPoolInfo.queueFamilyIndex = computeQueueFamilyIndex;
+    if (vkCreateCommandPool(device, &interopPoolInfo, nullptr, &ncnnInteropCommandPool) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create NCNN interop command pool!");
+    }
+
+    VkCommandBufferAllocateInfo interopAllocateInfo{};
+    interopAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    interopAllocateInfo.commandPool = ncnnInteropCommandPool;
+    interopAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    interopAllocateInfo.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(
+            device, &interopAllocateInfo, &ncnnInteropCommandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate NCNN interop command buffer!");
+    }
+    setDebugObjectName(VK_OBJECT_TYPE_COMMAND_BUFFER,
+        reinterpret_cast<uint64_t>(ncnnInteropCommandBuffer),
+        "NCNN Timeline Interop Command Buffer");
 
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -1257,6 +1354,8 @@ void VulkanNcnnRenderer::updateUniformBuffer(uint32_t currentImage) {
 }
 
 bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
+    PROFILE_ZONE("Acquire Swapchain Image");
+    const auto acquireStart = std::chrono::steady_clock::now();
     pushNvtxRange(std::string("CPU Sync: acquire swapchain image [frameSlot=") + std::to_string(currentFrame) + "]");
     VkResult result = VK_SUCCESS;
     {
@@ -1274,6 +1373,9 @@ bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
         );
     }
     popNvtxRange();
+    PROFILE_PLOT("Swapchain Acquire Time (ms)",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - acquireStart).count());
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapChain();
@@ -1291,7 +1393,13 @@ bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
 
 bool VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
     pushNvtxRange(std::string("CPU Sync: query in-flight fence [frameSlot=") + std::to_string(frameSlot) + "]");
-    const VkResult fenceStatus = vkGetFenceStatus(device, inFlightFences[frameSlot]);
+    VkResult fenceStatus = VK_SUCCESS;
+    {
+        // This renderer polls instead of blocking. The zone remains narrowly
+        // scoped so Tracy distinguishes fence pressure from later NCNN work.
+        PROFILE_ZONE("Wait Fence");
+        fenceStatus = vkGetFenceStatus(device, inFlightFences[frameSlot]);
+    }
     popNvtxRange();
     if (fenceStatus == VK_NOT_READY) {
         return false;
@@ -1348,18 +1456,27 @@ void VulkanNcnnRenderer::setBenchmarkModeEnabled(bool enabled) {
 uint32_t VulkanNcnnRenderer::recordMainRenderCommands(uint32_t frameSlot,
                                                          uint32_t imageIndex,
                                                          PresentationCommandMode mode) {
+    PROFILE_ZONE("Command Buffer Recording");
+    const auto recordingStart = std::chrono::steady_clock::now();
     pushNvtxRange(
         std::string("CPU Record: graphics command buffer [frameSlot=") + std::to_string(frameSlot) +
         ", swapchain=" + std::to_string(imageIndex) +
         ", mode=" + presentationModeName(mode) + "]");
+    pendingGraphicsInterpolationWaitValue = 0;
     vkResetFences(device, 1, &inFlightFences[frameSlot]);
     vkResetCommandBuffer(commandBuffers[frameSlot], 0);
     const uint32_t capturedSlot = recordCommandBuffer(commandBuffers[frameSlot], imageIndex, mode);
     popNvtxRange();
+    if (capturedSlot != UINT32_MAX) {
+        PROFILE_PLOT("Native Render Time (ms)",
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - recordingStart).count());
+    }
     return capturedSlot;
 }
 
 void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot) {
+    PROFILE_ZONE("Vulkan Submit");
     pushNvtxRange(
         std::string("CPU Submit: graphics queue [frameSlot=") + std::to_string(frameSlot) +
         ", swapchain=" + std::to_string(imageIndex) +
@@ -1368,18 +1485,41 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[frameSlot] };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    submitInfo.waitSemaphoreCount = 1;
+    VkSemaphore waitSemaphores[2] = { imageAvailableSemaphores[frameSlot], interpolationTimelineSemaphore };
+    VkPipelineStageFlags waitStages[2] = {
+        VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT
+    };
+    uint64_t waitValues[2] = { 0, pendingGraphicsInterpolationWaitValue };
+    submitInfo.waitSemaphoreCount = pendingGraphicsInterpolationWaitValue != 0 ? 2u : 1u;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
 
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffers[frameSlot];
 
-    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[imageIndex] };
-    submitInfo.signalSemaphoreCount = 1;
+    uint64_t nativeSignalValue = 0;
+    if (capturedNcnnSlot < offscreenFrames.size()) {
+        nativeSignalValue = nextNativeFrameTimelineValue++;
+        offscreenFrames[capturedNcnnSlot].nativeReadyTimelineValue = nativeSignalValue;
+        const std::string readyMessage =
+            "Native ready N" +
+            std::to_string(offscreenFrames[capturedNcnnSlot].debugFrameId);
+        PROFILE_MESSAGE(readyMessage);
+    }
+
+    VkSemaphore signalSemaphores[2] = { renderFinishedSemaphores[imageIndex], nativeFrameTimelineSemaphore };
+    uint64_t signalValues[2] = { 0, nativeSignalValue };
+    submitInfo.signalSemaphoreCount = nativeSignalValue != 0 ? 2u : 1u;
     submitInfo.pSignalSemaphores = signalSemaphores;
+
+    VkTimelineSemaphoreSubmitInfo timelineInfo{};
+    timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timelineInfo.waitSemaphoreValueCount = submitInfo.waitSemaphoreCount;
+    timelineInfo.pWaitSemaphoreValues = waitValues;
+    timelineInfo.signalSemaphoreValueCount = submitInfo.signalSemaphoreCount;
+    timelineInfo.pSignalSemaphoreValues = signalValues;
+    submitInfo.pNext = &timelineInfo;
 
     VkResult submitResult = VK_SUCCESS;
     {
@@ -1398,6 +1538,7 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
 }
 
 void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
+    PROFILE_ZONE("Native/Generated Frame Ready Enqueue");
     VulkanPresentJob job{};
     job.swapchain = swapChain;
     job.waitSemaphore = renderFinishedSemaphores[imageIndex];
@@ -1406,6 +1547,14 @@ void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
     job.timelineStep = debugLastPresentedTimelineStep;
     job.frameKind = pendingPresentedFrameKind;
     job.label = debugLastPresentedFrameLabel;
+    if (job.frameKind == PresentedFrameKind::Interpolated && job.timelineStep >= 1) {
+        job.previousNativeFrameId =
+            static_cast<uint64_t>((job.timelineStep - 1) / 2);
+        job.currentNativeFrameId = job.previousNativeFrameId + 1;
+    }
+    else if (job.frameKind == PresentedFrameKind::Real && job.timelineStep >= 0) {
+        job.currentNativeFrameId = static_cast<uint64_t>(job.timelineStep / 2);
+    }
     pendingPresentedFrameKind = PresentedFrameKind::None;
 
     // Graphics submission is complete from the CPU's perspective. The main
@@ -1415,6 +1564,8 @@ void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
 }
 
 VkResult VulkanNcnnRenderer::presentPreparedFrame(const VulkanPresentJob& job) {
+    PROFILE_ZONE("vkQueuePresentKHR");
+    const auto presentStart = std::chrono::steady_clock::now();
     pushNvtxRange(
         std::string("CPU Present: paced queue present [swapchain=") + std::to_string(job.imageIndex) +
         ", logical=" + job.label + "]");
@@ -1441,11 +1592,15 @@ VkResult VulkanNcnnRenderer::presentPreparedFrame(const VulkanPresentJob& job) {
         endQueueDebugLabel(presentQueue);
     }
     popNvtxRange();
+    PROFILE_PLOT("vkQueuePresentKHR Time (ms)",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - presentStart).count());
 
     return result;
 }
 
 bool VulkanNcnnRenderer::processFramePacerCompletions() {
+    PROFILE_ZONE("Present Result Handling");
     VulkanPresentCompletion completion{};
     bool recreateRequired = framebufferResized;
     while (framePacer.tryPopCompletion(completion)) {
@@ -1468,6 +1623,7 @@ bool VulkanNcnnRenderer::processFramePacerCompletions() {
     }
 
     if (recreateRequired) {
+        PROFILE_ZONE("Present-Triggered Swapchain Recreation");
         framebufferResized = false;
         recreateSwapChain();
         return true;
@@ -1502,6 +1658,9 @@ void VulkanNcnnRenderer::recordPresentedFrameStats(PresentedFrameKind frameKind)
     displayedPresentedFps = static_cast<float>(fpsPresentedFrameCount) / elapsed.count();
     displayedRealFps = static_cast<float>(fpsRealFrameCount) / elapsed.count();
     displayedInterpolatedFps = static_cast<float>(fpsInterpolatedFrameCount) / elapsed.count();
+    PROFILE_PLOT("Total Present FPS", displayedPresentedFps);
+    PROFILE_PLOT("Native FPS", displayedRealFps);
+    PROFILE_PLOT("Interpolation FPS", displayedInterpolatedFps);
     fpsPresentedFrameCount = 0;
     fpsRealFrameCount = 0;
     fpsInterpolatedFrameCount = 0;
@@ -1513,6 +1672,7 @@ void VulkanNcnnRenderer::advanceFrameIndex() {
 }
 
 void VulkanNcnnRenderer::drawFrame() {
+    PROFILE_ZONE("Render Frame");
     bool useChronologicalInterpolation = false;
 #if HAS_NCNN
     useChronologicalInterpolation =
@@ -1678,6 +1838,9 @@ void VulkanNcnnRenderer::drawFrame() {
     const uint32_t capturedNcnnSlot = recordMainRenderCommands(frameSlot, imageIndex, mode);
     submitGraphicsWork(frameSlot, imageIndex, capturedNcnnSlot);
     handlePresentation(imageIndex);
+    if (capturedNcnnSlot != UINT32_MAX) {
+        PROFILE_FRAME_MARK();
+    }
 
     if (benchmarkModeEnabled) {
         const auto afterPresent = std::chrono::steady_clock::now();

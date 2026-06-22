@@ -1,5 +1,6 @@
 // Owns NCNN initialization, frame-processing resources, async inference, and cleanup.
 #include "VulkanNcnnRenderer.h"
+#include "CpuProfiler.h"
 
 #include <algorithm>
 #include <chrono>
@@ -116,6 +117,10 @@ void VulkanNcnnRenderer::initNcnn() {
         const ncnn::GpuInfo& gpuInfo = ncnn::get_gpu_info(ncnnRendererDeviceIndex);
         ncnnComputeQueueFamilyIndex = gpuInfo.compute_queue_family_index();
         ncnnTransferQueueFamilyIndex = gpuInfo.transfer_queue_family_index();
+        if (ncnnComputeQueueFamilyIndex != computeQueueFamilyIndex) {
+            throw std::runtime_error(
+                "renderer compute queue family does not match NCNN's compute queue family");
+        }
     }
 
     const auto rendererQueueUsesNcnnQueueZero = [&](uint32_t familyIndex, uint32_t queueIndex) {
@@ -294,6 +299,11 @@ bool VulkanNcnnRenderer::createExportableFrameBuffer(VkDeviceSize size,
 void VulkanNcnnRenderer::createFrameProcessingResources() {
     cleanupFrameProcessingResources();
 
+    std::vector<uint32_t> interpolationQueueFamilies = { graphicsQueueFamilyIndex };
+    if (computeQueueFamilyIndex != graphicsQueueFamilyIndex) {
+        interpolationQueueFamilies.push_back(computeQueueFamilyIndex);
+    }
+
     const VkDeviceSize frameSize =
         static_cast<VkDeviceSize>(swapChainExtent.width) *
         static_cast<VkDeviceSize>(swapChainExtent.height) * 4;
@@ -330,7 +340,8 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             frame.image,
             frame.imageMemory,
-            offscreenFlags
+            offscreenFlags,
+            interpolationQueueFamilies
         );
         frame.imageView = createImageView(frame.image, swapChainImageFormat, 1);
         frame.ncnnInputImageView = createImageView(frame.image, ncnnInputFormat, 1);
@@ -351,7 +362,8 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             output.gpuBuffer,
-            output.gpuMemory
+            output.gpuMemory,
+            interpolationQueueFamilies
         );
 
         output.size = frameSize;
@@ -360,6 +372,7 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
         output.inUseByGraphics = false;
         output.graphicsFrameSlot = UINT32_MAX;
         output.sequence = 0;
+        output.interpolationReadyTimelineValue = 0;
         output.debugPreviousFrameId = UINT64_MAX;
         output.debugCurrentFrameId = UINT64_MAX;
         setDebugObjectName(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(output.gpuBuffer),
@@ -387,6 +400,132 @@ void VulkanNcnnRenderer::initializeFrameProcessingImageLayouts() {
     }
 }
 
+void VulkanNcnnRenderer::waitForNativeFramesOnNcnnQueue(uint64_t timelineValue) {
+    PROFILE_ZONE("Wait Native Timeline Semaphore");
+    if (timelineValue == 0) {
+        throw std::runtime_error("NCNN interpolation source has no graphics timeline value");
+    }
+
+    vkResetCommandBuffer(ncnnInteropCommandBuffer, 0);
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(ncnnInteropCommandBuffer, &beginInfo) != VK_SUCCESS) {
+        throw std::runtime_error("failed to begin NCNN input acquire command buffer");
+    }
+
+    {
+        PROFILE_GPU_ZONE(tracyComputeContext, ncnnInteropCommandBuffer, "NCNN Input Acquire Barrier");
+        VkMemoryBarrier acquireBarrier{};
+        acquireBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        acquireBarrier.srcAccessMask = 0;
+        acquireBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(
+            ncnnInteropCommandBuffer,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0,
+            1,
+            &acquireBarrier,
+            0,
+            nullptr,
+            0,
+            nullptr);
+    }
+    PROFILE_GPU_COLLECT(tracyComputeContext, ncnnInteropCommandBuffer);
+    if (vkEndCommandBuffer(ncnnInteropCommandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to end NCNN input acquire command buffer");
+    }
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    VkTimelineSemaphoreSubmitInfo timelineInfo{};
+    timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timelineInfo.waitSemaphoreValueCount = 1;
+    timelineInfo.pWaitSemaphoreValues = &timelineValue;
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.pNext = &timelineInfo;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = &nativeFrameTimelineSemaphore;
+    submitInfo.pWaitDstStageMask = &waitStage;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &ncnnInteropCommandBuffer;
+
+    // NCNN submits its VkCompute work to this same queue. Queue order makes
+    // this semaphore wait a gate in front of the unchanged RIFE dispatch.
+    if (vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        throw std::runtime_error("failed to submit NCNN native-frame timeline wait");
+    }
+    {
+        PROFILE_ZONE("vkQueueWaitIdle - NCNN Input Gate");
+        // NCNN owns the following command buffer submission, so this gate must
+        // complete before its opaque submit_and_wait() dispatch begins.
+        if (vkQueueWaitIdle(computeQueue) != VK_SUCCESS) {
+            throw std::runtime_error("failed to complete NCNN native-frame timeline wait");
+        }
+    }
+}
+
+void VulkanNcnnRenderer::signalInterpolationOnNcnnQueue(uint64_t timelineValue) {
+    PROFILE_ZONE("Signal Interpolation Timeline");
+    vkResetCommandBuffer(ncnnInteropCommandBuffer, 0);
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(ncnnInteropCommandBuffer, &beginInfo) != VK_SUCCESS) {
+        throw std::runtime_error("failed to begin NCNN output release command buffer");
+    }
+
+    {
+        PROFILE_GPU_ZONE(tracyComputeContext, ncnnInteropCommandBuffer, "NCNN Output Release Barrier");
+        VkMemoryBarrier releaseBarrier{};
+        releaseBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        releaseBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        releaseBarrier.dstAccessMask = 0;
+        vkCmdPipelineBarrier(
+            ncnnInteropCommandBuffer,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            0,
+            1,
+            &releaseBarrier,
+            0,
+            nullptr,
+            0,
+            nullptr);
+    }
+    PROFILE_GPU_COLLECT(tracyComputeContext, ncnnInteropCommandBuffer);
+    if (vkEndCommandBuffer(ncnnInteropCommandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to end NCNN output release command buffer");
+    }
+
+    VkTimelineSemaphoreSubmitInfo timelineInfo{};
+    timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timelineInfo.signalSemaphoreValueCount = 1;
+    timelineInfo.pSignalSemaphoreValues = &timelineValue;
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.pNext = &timelineInfo;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &ncnnInteropCommandBuffer;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &interpolationTimelineSemaphore;
+
+    // submit_and_wait() has returned, so this ordered signal covers all RIFE
+    // shader writes. Graphics waits on this value before transfer reads.
+    if (vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        throw std::runtime_error("failed to submit NCNN interpolation timeline signal");
+    }
+    {
+        PROFILE_ZONE("vkQueueWaitIdle - NCNN Output Signal");
+        if (vkQueueWaitIdle(computeQueue) != VK_SUCCESS) {
+            throw std::runtime_error("failed to complete NCNN interpolation timeline signal");
+        }
+    }
+}
+
 void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
 #if HAS_NCNN
     waitForAsyncNcnnInference();
@@ -409,6 +548,7 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
         output.inUseByGraphics = false;
         output.graphicsFrameSlot = UINT32_MAX;
         output.sequence = 0;
+        output.interpolationReadyTimelineValue = 0;
         output.debugPreviousFrameId = UINT64_MAX;
         output.debugCurrentFrameId = UINT64_MAX;
     }
@@ -453,6 +593,7 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
         }
 
         frame.size = 0;
+        frame.nativeReadyTimelineValue = 0;
         frame.debugFrameId = UINT64_MAX;
         frame.debugPresented = false;
     }
@@ -523,6 +664,9 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
                                                    VkAccessFlags sourceAccessMask,
                                                    VkPipelineStageFlags sourceStageMask,
                                                    const std::string& logicalFrameLabel) {
+    PROFILE_GPU_ZONE(tracyGraphicsContext, commandBuffer, "Generated Frame Copy + Layout Transitions");
+    (void)sourceAccessMask;
+    (void)sourceStageMask;
     VkImageMemoryBarrier toTransferDstBarrier{};
     toTransferDstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     // Presentation overwrites the entire acquired image, so its old contents
@@ -556,7 +700,11 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
 
     VkBufferMemoryBarrier ncnnOutputBarrier{};
     ncnnOutputBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    ncnnOutputBarrier.srcAccessMask = sourceAccessMask;
+    // The interpolation timeline wait on the graphics submission makes NCNN's
+    // compute writes available and visible. This local barrier scopes the
+    // destination transfer read; it must not pretend the compute write occurred
+    // on this graphics queue.
+    ncnnOutputBarrier.srcAccessMask = 0;
     ncnnOutputBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     ncnnOutputBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     ncnnOutputBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -566,7 +714,7 @@ void VulkanNcnnRenderer::copyNcnnBufferToSwapchain(VkCommandBuffer commandBuffer
 
     vkCmdPipelineBarrier(
         commandBuffer,
-        sourceStageMask,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         0,
         0,
@@ -675,7 +823,8 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
     if (!selectedOutput.ready ||
         selectedOutput.inUseByGraphics ||
         selectedOutput.gpuBuffer == VK_NULL_HANDLE ||
-        selectedOutput.size == 0) {
+        selectedOutput.size == 0 ||
+        selectedOutput.interpolationReadyTimelineValue == 0) {
         ncnnPresentationState.hasNcnnDisplayFrame = false;
         ncnnPresentationState.ncnnPendingInterpolatedOutputIndex = UINT32_MAX;
         return;
@@ -703,6 +852,7 @@ void VulkanNcnnRenderer::displayNcnnFrameOnSwapchain(VkCommandBuffer commandBuff
     endDebugLabel(commandBuffer);
     popNvtxRange();
     pendingPresentedFrameKind = PresentedFrameKind::Interpolated;
+    pendingGraphicsInterpolationWaitValue = selectedOutput.interpolationReadyTimelineValue;
 
     selectedOutput.ready = false;
     selectedOutput.inUseByGraphics = true;
@@ -782,6 +932,7 @@ void VulkanNcnnRenderer::setNcnnRealtimeInterpolationEnabled(bool enabled) {
         if (!output.inUseByInference) {
             output.ready = false;
             output.sequence = 0;
+            output.interpolationReadyTimelineValue = 0;
         }
     }
 
@@ -803,7 +954,10 @@ void VulkanNcnnRenderer::waitForAsyncNcnnInference() {
             continue;
         }
 
-        target.future.wait();
+        {
+            PROFILE_ZONE("Wait Interpolation Completion - Shutdown/Reconfigure");
+            target.future.wait();
+        }
         AsyncNcnnResult result = target.future.get();
         if (result.outputIndex < ncnnOutputBuffers.size()) {
             ncnnOutputBuffers[result.outputIndex].inUseByInference = false;
@@ -860,6 +1014,7 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
             if (result.outputIndex < ncnnOutputBuffers.size()) {
                 ncnnOutputBuffers[result.outputIndex].ready = false;
                 ncnnOutputBuffers[result.outputIndex].sequence = 0;
+                ncnnOutputBuffers[result.outputIndex].interpolationReadyTimelineValue = 0;
                 ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = UINT64_MAX;
                 ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = UINT64_MAX;
             }
@@ -900,8 +1055,16 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
             "+" + debugRealFrameLabel(result.currentFrameId) + "]");
         ncnnOutputBuffers[result.outputIndex].ready = true;
         ncnnOutputBuffers[result.outputIndex].sequence = ncnnPresentationState.nextNcnnOutputSequence++;
+        ncnnOutputBuffers[result.outputIndex].interpolationReadyTimelineValue =
+            result.interpolationTimelineValue;
         ncnnOutputBuffers[result.outputIndex].debugPreviousFrameId = result.previousFrameId;
         ncnnOutputBuffers[result.outputIndex].debugCurrentFrameId = result.currentFrameId;
+        PROFILE_PLOT("Interpolation Compute Time (ms)", result.rifeProcessMs);
+        const std::string readyMessage =
+            "Generated ready G" + std::to_string(result.previousFrameId) +
+            ".5 from N" + std::to_string(result.previousFrameId) +
+            " N" + std::to_string(result.currentFrameId);
+        PROFILE_MESSAGE(readyMessage);
         target.state = InterpolationTargetState::Ready;
         target.outputIndex = result.outputIndex;
         target.previousSourceIndex = result.previousSourceIndex;
@@ -926,6 +1089,7 @@ void VulkanNcnnRenderer::pollAsyncNcnnInference() {
     }
 
     ncnnPresentationState.ncnnRunningJobCount = runningCount;
+    PROFILE_PLOT("Interpolation Input Queue Size", static_cast<int64_t>(pendingCount));
 }
 
 bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
@@ -1064,6 +1228,9 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         const VkBuffer outBuffer = ncnnOutputBuffers[outputIndex].gpuBuffer;
         const VkDeviceMemory outMemory = ncnnOutputBuffers[outputIndex].gpuMemory;
         const VkDeviceSize outSize = ncnnOutputBuffers[outputIndex].size;
+        const uint64_t nativeReadyTimelineValue = std::max(
+            offscreenFrames[prevIndex].nativeReadyTimelineValue,
+            offscreenFrames[currIndex].nativeReadyTimelineValue);
         const int inputW = static_cast<int>(swapChainExtent.width);
         const int inputH = static_cast<int>(swapChainExtent.height);
         const int divisor = std::clamp(
@@ -1077,6 +1244,7 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         ncnnOutputBuffers[outputIndex].inUseByInference = true;
         ncnnOutputBuffers[outputIndex].ready = false;
         ncnnOutputBuffers[outputIndex].sequence = 0;
+        ncnnOutputBuffers[outputIndex].interpolationReadyTimelineValue = 0;
         ncnnOutputBuffers[outputIndex].debugPreviousFrameId = prevFrameId;
         ncnnOutputBuffers[outputIndex].debugCurrentFrameId = currFrameId;
         markNvtxInstant(
@@ -1109,6 +1277,7 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
                                                         outBuffer,
                                                         outMemory,
                                                         outSize,
+                                                        nativeReadyTimelineValue,
                                                         inputW,
                                                         inputH,
                                                         inferenceW,
@@ -1119,6 +1288,8 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
                                                         prevFrameId,
                                                         currFrameId,
                                                         targetIndex]() {
+            PROFILE_THREAD("NCNN Compute");
+            PROFILE_ZONE("Frame Interpolation / NCNN Compute");
             AsyncNcnnResult result{};
             result.inputW = inputW;
             result.inputH = inputH;
@@ -1176,7 +1347,10 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
                 result.queueWaitMs = std::chrono::duration<double, std::milli>(
                     std::chrono::high_resolution_clock::now() - queueWaitStart).count();
                 popNvtxRange();
+                waitForNativeFramesOnNcnnQueue(nativeReadyTimelineValue);
                 result.processRet = processFrames();
+                result.interpolationTimelineValue = nextInterpolationTimelineValue.fetch_add(1);
+                signalInterpolationOnNcnnQueue(result.interpolationTimelineValue);
             }
             else {
                 pushNvtxRange("CPU Sync: Wait Compute Queue Mutex for RIFE");
@@ -1184,7 +1358,10 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
                 result.queueWaitMs = std::chrono::duration<double, std::milli>(
                     std::chrono::high_resolution_clock::now() - queueWaitStart).count();
                 popNvtxRange();
+                waitForNativeFramesOnNcnnQueue(nativeReadyTimelineValue);
                 result.processRet = processFrames();
+                result.interpolationTimelineValue = nextInterpolationTimelineValue.fetch_add(1);
+                signalInterpolationOnNcnnQueue(result.interpolationTimelineValue);
             }
 
             result.inferenceMs = std::chrono::duration<double, std::milli>(

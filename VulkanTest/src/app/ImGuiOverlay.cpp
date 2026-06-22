@@ -1,5 +1,6 @@
 // Owns the Dear ImGui overlay lifecycle and swapchain compositing pass.
 #include "VulkanNcnnRenderer.h"
+#include "CpuProfiler.h"
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -65,7 +66,10 @@ void VulkanNcnnRenderer::initializeImGuiResources() {
     ImGui::NewFrame();
     ImGui::Render();
     pushNvtxRange("CPU Sync: Dear ImGui Font Upload Device WaitIdle");
-    vkDeviceWaitIdle(device);
+    {
+        PROFILE_ZONE("vkDeviceWaitIdle - ImGui Shutdown");
+        vkDeviceWaitIdle(device);
+    }
     popNvtxRange();
 }
 
@@ -243,6 +247,8 @@ void VulkanNcnnRenderer::renderImGuiOverlay(VkCommandBuffer commandBuffer, uint3
     if (!drawData || drawData->CmdListsCount == 0) {
         return;
     }
+    PROFILE_ZONE("UI Composition");
+    PROFILE_GPU_ZONE(tracyGraphicsContext, commandBuffer, "UI Composition");
 
     VkImageMemoryBarrier toColorAttachment{};
     toColorAttachment.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;

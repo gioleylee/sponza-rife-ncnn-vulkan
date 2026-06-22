@@ -66,6 +66,19 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <EnableTracy Condition="'$(EnableTracy)'==''">false</EnableTracy>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\tracy\public;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(EnableTracy)'=='true'">
+    <ClCompile>
+      <PreprocessorDefinitions>ENABLE_TRACY;TRACY_ENABLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IncludePath>$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
@@ -165,6 +178,9 @@
     <ClCompile Include="src\platform\WindowInput.cpp" />
     <ClCompile Include="src\platform\validation_layers.cpp" />
     <ClCompile Include="third_party\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="third_party\tracy\public\TracyClient.cpp">
+      <ExcludedFromBuild Condition="'$(EnableTracy)'!='true'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="C:\projects\libraries\include\imgui\imgui.cpp" />
     <ClCompile Include="C:\projects\libraries\include\imgui\imgui_draw.cpp" />
     <ClCompile Include="C:\projects\libraries\include\imgui\imgui_impl_glfw.cpp" />
@@ -181,6 +197,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="ncnn_setup.md" />
+    <None Include="tracy_setup.md" />
     <None Include="third_party\nvtx\LICENSE.txt" />
     <None Include="shaders\compile.bat" />
     <None Include="shaders\deferred.frag" />
@@ -192,6 +209,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\app\AppTypes.h" />
+    <ClInclude Include="include\app\CpuProfiler.h" />
     <ClInclude Include="include\app\DescriptorResources.h" />
     <ClInclude Include="include\app\ModelLoader.h" />
     <ClInclude Include="include\app\RenderResources.h" />

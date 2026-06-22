@@ -60,6 +60,7 @@
 #endif
 
 #include "NcnnFrameInterpolator.h"
+#include "VulkanFramePacer.h"
 
 #include "AppTypes.h"
 #include "validation_layers.h"
@@ -94,7 +95,11 @@ private:
     uint32_t presentQueueIndex = 0;
     uint32_t computeQueueIndex = 0;
     std::mutex vulkanQueueMutex;
+    std::mutex swapchainOperationMutex;
     std::mutex ncnnComputeQueueMutex;
+    VulkanFramePacer framePacer;
+    uint64_t swapchainGeneration = 1;
+    bool framePacerStarted = false;
 #if defined(_WIN32)
     PFN_vkGetMemoryWin32HandleKHR vkGetMemoryWin32HandleKHRFn = nullptr;
 #endif
@@ -288,6 +293,10 @@ private:
 
     void initializeOptionalNcnn();
 
+    void initializeFramePacer();
+
+    void shutdownFramePacer();
+
     void mainLoop();
 
     void cleanup();
@@ -421,6 +430,10 @@ private:
     void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot);
 
     void handlePresentation(uint32_t imageIndex);
+
+    VkResult presentPreparedFrame(const VulkanPresentJob& job);
+
+    bool processFramePacerCompletions();
 
     void recordPresentedFrameStats(PresentedFrameKind frameKind);
 

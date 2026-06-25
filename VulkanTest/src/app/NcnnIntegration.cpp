@@ -353,6 +353,11 @@ void VulkanNcnnRenderer::createFrameProcessingResources() {
             "Offscreen Source NCNN Input View Slot " + std::to_string(i));
 
         frame.size = frameSize;
+        frame.nativeReadyTimelineValue = 0;
+        frame.debugFrameId = UINT64_MAX;
+        frame.inUseByGraphics = false;
+        frame.graphicsFrameSlot = UINT32_MAX;
+        frame.debugPresented = false;
     }
 
     for (uint32_t i = 0; i < ncnnOutputBuffers.size(); ++i) {
@@ -595,6 +600,8 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
         frame.size = 0;
         frame.nativeReadyTimelineValue = 0;
         frame.debugFrameId = UINT64_MAX;
+        frame.inUseByGraphics = false;
+        frame.graphicsFrameSlot = UINT32_MAX;
         frame.debugPresented = false;
     }
 
@@ -611,6 +618,9 @@ void VulkanNcnnRenderer::cleanupFrameProcessingResources() {
 uint32_t VulkanNcnnRenderer::findAvailableOffscreenFrameSlot() const {
     for (uint32_t slot = 0; slot < offscreenFrames.size(); ++slot) {
         if (slot == ncnnPresentationState.currentNcnnGpuFrameIndex) {
+            continue;
+        }
+        if (offscreenFrames[slot].inUseByGraphics) {
             continue;
         }
         if (slot == ncnnPresentationState.ncnnPendingSourceDisplayIndex) {
@@ -886,6 +896,8 @@ void VulkanNcnnRenderer::displayNcnnSourceBufferOnSwapchain(VkCommandBuffer comm
 
     markDebugRealFramePresented(sourceIndex);
     pendingPresentedFrameKind = PresentedFrameKind::Real;
+    offscreenFrames[sourceIndex].inUseByGraphics = true;
+    offscreenFrames[sourceIndex].graphicsFrameSlot = currentFrame;
     copyOffscreenImageToSwapchain(commandBuffer, imageIndex, sourceIndex);
 }
 
@@ -1209,6 +1221,7 @@ bool VulkanNcnnRenderer::submitAsyncNcnnInferenceIfReady() {
         const uint64_t currFrameId = target.currentFrameId;
         if (prevIndex >= offscreenFrames.size() ||
             currIndex >= offscreenFrames.size() ||
+            currFrameId != prevFrameId + 1 ||
             offscreenFrames[prevIndex].debugFrameId != prevFrameId ||
             offscreenFrames[currIndex].debugFrameId != currFrameId) {
             dropInterpolationTarget(targetIndex, "source offscreen slot was overwritten before inference");

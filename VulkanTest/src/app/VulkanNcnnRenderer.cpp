@@ -912,12 +912,15 @@ void VulkanNcnnRenderer::processCapturedFrameForSlot(uint32_t frameSlot) {
         return;
     }
 
-    ncnnPresentationState.previousNcnnGpuFrameIndex = ncnnPresentationState.currentNcnnGpuFrameIndex;
+    const uint32_t oldCurrentIndex = ncnnPresentationState.currentNcnnGpuFrameIndex;
+    ncnnPresentationState.previousNcnnGpuFrameIndex = oldCurrentIndex;
     ncnnPresentationState.currentNcnnGpuFrameIndex = captureSlot;
     ncnnPresentationState.hasNcnnGpuFramePair =
         ncnnPresentationState.previousNcnnGpuFrameIndex != UINT32_MAX &&
         ncnnPresentationState.previousNcnnGpuFrameIndex != ncnnPresentationState.currentNcnnGpuFrameIndex &&
-        ncnnPresentationState.previousNcnnGpuFrameIndex < offscreenFrames.size();
+        ncnnPresentationState.previousNcnnGpuFrameIndex < offscreenFrames.size() &&
+        offscreenFrames[ncnnPresentationState.previousNcnnGpuFrameIndex].debugFrameId != UINT64_MAX &&
+        capture.debugFrameId == offscreenFrames[ncnnPresentationState.previousNcnnGpuFrameIndex].debugFrameId + 1;
 
     ++capturedFrameCount;
 
@@ -927,6 +930,10 @@ void VulkanNcnnRenderer::processCapturedFrameForSlot(uint32_t frameSlot) {
             ncnnPresentationState.currentNcnnGpuFrameIndex);
     }
     else {
+        ncnnPresentationState.previousNcnnGpuFrameIndex = UINT32_MAX;
+        for (uint32_t targetIndex = 0; targetIndex < ncnnInterpolationTargets.size(); ++targetIndex) {
+            dropInterpolationTarget(targetIndex, "native history was invalidated");
+        }
     }
     updateWaitingInterpolationTargets();
 #endif
@@ -1415,6 +1422,12 @@ bool VulkanNcnnRenderer::updateFrameState(uint32_t frameSlot) {
             output.graphicsFrameSlot = UINT32_MAX;
         }
     }
+    for (auto& frame : offscreenFrames) {
+        if (frame.inUseByGraphics && frame.graphicsFrameSlot == frameSlot) {
+            frame.inUseByGraphics = false;
+            frame.graphicsFrameSlot = UINT32_MAX;
+        }
+    }
     releaseObsoleteNcnnOutputBuffers();
     processCapturedFrameForSlot(frameSlot);
     updateWaitingInterpolationTargets();
@@ -1792,7 +1805,10 @@ void VulkanNcnnRenderer::drawFrame() {
             ncnnPresentationState.hasNcnnDisplayFrame = true;
             mode = PresentationCommandMode::DisplayInterpolatedFrame;
         }
-        else if (mode != PresentationCommandMode::DisplayHeldSourceFrame && canRenderSourceFrame) {
+        else if (mode != PresentationCommandMode::DisplayHeldSourceFrame &&
+                 expectedTargetIndex < ncnnInterpolationTargets.size() &&
+                 ncnnInterpolationTargets[expectedTargetIndex].waitingForFutureSource &&
+                 canRenderSourceFrame) {
             mode = PresentationCommandMode::RenderFrame;
         }
         else if (mode != PresentationCommandMode::DisplayHeldSourceFrame &&
@@ -1809,12 +1825,7 @@ void VulkanNcnnRenderer::drawFrame() {
         }
     }
 
-    if (useChronologicalInterpolation &&
-        canRenderSourceFrame &&
-        mode != PresentationCommandMode::RenderFrame) {
-        mode = PresentationCommandMode::RenderFrame;
-    }
-    else if (benchmarkModeEnabled &&
+    if (benchmarkModeEnabled &&
              !benchmarkCanRenderSourceFrame &&
              mode == PresentationCommandMode::RenderFrame) {
         if (ncnnPresentationState.ncnnHeldSourceDisplayIndex < offscreenFrames.size()) {

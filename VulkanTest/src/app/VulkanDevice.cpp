@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <cstring>
 #include <cstdint>
 #include <iostream>
 #include <set>

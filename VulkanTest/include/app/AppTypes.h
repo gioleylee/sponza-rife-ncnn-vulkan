@@ -29,7 +29,7 @@ inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 6;
 inline constexpr uint32_t NCNN_OUTPUT_BUFFER_COUNT = 3;
 // Keep the async queue shallow until the NCNN/RIFE wrapper is proven safe at
 // higher concurrency.
-inline constexpr uint32_t MAX_NCNN_IN_FLIGHT = 2;
+inline constexpr uint32_t MAX_NCNN_IN_FLIGHT = 1;
 
 inline const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -38,6 +38,8 @@ inline const std::vector<const char*> deviceExtensions = {
     VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME
 #endif
 };
+
+using FamilyIndex = uint32_t;
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -178,6 +180,8 @@ struct OffscreenFrame {
     VkDeviceSize size = 0;
     uint64_t nativeReadyTimelineValue = 0;
     uint64_t debugFrameId = UINT64_MAX;
+    bool inUseByGraphics = false;
+    uint32_t graphicsFrameSlot = UINT32_MAX;
     bool debugPresented = false;
 };
 

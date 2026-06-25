@@ -61,8 +61,6 @@
 #endif
 
 #include "NcnnFrameInterpolator.h"
-#include "CpuProfiler.h"
-#include "VulkanFramePacer.h"
 
 #include "AppTypes.h"
 #include "validation_layers.h"
@@ -97,20 +95,7 @@ private:
     uint32_t presentQueueIndex = 0;
     uint32_t computeQueueIndex = 0;
     std::mutex vulkanQueueMutex;
-    std::mutex swapchainOperationMutex;
     std::mutex ncnnComputeQueueMutex;
-    VkSemaphore nativeFrameTimelineSemaphore = VK_NULL_HANDLE;
-    VkSemaphore interpolationTimelineSemaphore = VK_NULL_HANDLE;
-    VkCommandPool ncnnInteropCommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer ncnnInteropCommandBuffer = VK_NULL_HANDLE;
-    ProfileGpuContext tracyGraphicsContext = nullptr;
-    ProfileGpuContext tracyComputeContext = nullptr;
-    uint64_t nextNativeFrameTimelineValue = 1;
-    std::atomic<uint64_t> nextInterpolationTimelineValue = 1;
-    uint64_t pendingGraphicsInterpolationWaitValue = 0;
-    VulkanFramePacer framePacer;
-    uint64_t swapchainGeneration = 1;
-    bool framePacerStarted = false;
 #if defined(_WIN32)
     PFN_vkGetMemoryWin32HandleKHR vkGetMemoryWin32HandleKHRFn = nullptr;
 #endif
@@ -304,14 +289,6 @@ private:
 
     void initializeOptionalNcnn();
 
-    void initializeFramePacer();
-
-    void shutdownFramePacer();
-
-    void initializeTracyGpuContexts();
-
-    void shutdownTracyGpuContexts();
-
     void mainLoop();
 
     void cleanup();
@@ -449,10 +426,6 @@ private:
     void signalInterpolationOnNcnnQueue(uint64_t timelineValue);
 
     void handlePresentation(uint32_t imageIndex);
-
-    VkResult presentPreparedFrame(const VulkanPresentJob& job);
-
-    bool processFramePacerCompletions();
 
     void recordPresentedFrameStats(PresentedFrameKind frameKind);
 

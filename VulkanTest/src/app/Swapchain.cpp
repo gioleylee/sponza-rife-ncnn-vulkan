@@ -81,10 +81,6 @@ void VulkanNcnnRenderer::recreateSwapChain() {
         glfwWaitEvents();
     }
 
-    if (framePacerStarted) {
-        framePacer.pause();
-    }
-
     pushNvtxRange("CPU Sync: Swapchain Recreation Device WaitIdle");
     {
         PROFILE_ZONE("vkDeviceWaitIdle - Swapchain Recreation");
@@ -126,11 +122,6 @@ void VulkanNcnnRenderer::recreateSwapChain() {
     createFramebuffers();
     createLightingDescriptorPool();
     createLightingDescriptorSets();
-
-    ++swapchainGeneration;
-    if (framePacerStarted) {
-        framePacer.resume(swapchainGeneration);
-    }
 }
 
 void VulkanNcnnRenderer::cleanupSwapChain() {

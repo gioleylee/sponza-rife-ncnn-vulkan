@@ -344,6 +344,16 @@ void VulkanNcnnRenderer::createLogicalDevice() {
     setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(presentQueue), "Present Queue");
     setDebugObjectName(VK_OBJECT_TYPE_QUEUE, reinterpret_cast<uint64_t>(computeQueue), "Compute Queue");
 
+    std::cout << "[Vulkan] graphics queue: family=" << graphicsQueueFamilyIndex
+              << ", index=" << graphicsQueueIndex
+              << ", handle=" << reinterpret_cast<const void*>(graphicsQueue) << std::endl;
+    std::cout << "[Vulkan] present queue: family=" << presentQueueFamilyIndex
+              << ", index=" << presentQueueIndex
+              << ", handle=" << reinterpret_cast<const void*>(presentQueue) << std::endl;
+    std::cout << "[Vulkan] compute queue: family=" << computeQueueFamilyIndex
+              << ", index=" << computeQueueIndex
+              << ", handle=" << reinterpret_cast<const void*>(computeQueue) << std::endl;
+
     if (computeQueue == graphicsQueue || computeQueue == presentQueue) {
         std::cout << "[Vulkan] warning: compute queue aliases a renderer queue; "
                   << "this device exposes no distinct queue handle for the selected families" << std::endl;

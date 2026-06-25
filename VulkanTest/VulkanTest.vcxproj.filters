@@ -111,9 +111,6 @@
     <ClCompile Include="src\app\NcnnIntegration.cpp">
       <Filter>Source Files\App\Frame Interpolation</Filter>
     </ClCompile>
-    <ClCompile Include="src\app\VulkanFramePacer.cpp">
-      <Filter>Source Files\App\Frame Interpolation</Filter>
-    </ClCompile>
     <ClCompile Include="src\app\DescriptorResources.cpp">
       <Filter>Source Files\App\Resources</Filter>
     </ClCompile>
@@ -186,9 +183,6 @@
       <Filter>Header Files\App\Frame Interpolation</Filter>
     </ClInclude>
     <ClInclude Include="include\app\NcnnIntegration.h">
-      <Filter>Header Files\App\Frame Interpolation</Filter>
-    </ClInclude>
-    <ClInclude Include="include\app\VulkanFramePacer.h">
       <Filter>Header Files\App\Frame Interpolation</Filter>
     </ClInclude>
     <ClInclude Include="include\app\DescriptorResources.h">

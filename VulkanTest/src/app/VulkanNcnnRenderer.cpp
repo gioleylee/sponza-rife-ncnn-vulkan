@@ -206,56 +206,12 @@ void VulkanNcnnRenderer::initializeDescriptorResources() {
 void VulkanNcnnRenderer::initializeSyncResources() {
     createCommandBuffers();
     createSyncObjects();
-    initializeTracyGpuContexts();
-    initializeFramePacer();
 }
 
 void VulkanNcnnRenderer::initializeOptionalNcnn() {
 #if HAS_NCNN
     initNcnn();
     tryLoadDefaultNcnnModel();
-#endif
-}
-
-void VulkanNcnnRenderer::initializeFramePacer() {
-    framePacer.start([this](const VulkanPresentJob& job) {
-        return presentPreparedFrame(job);
-    });
-    framePacerStarted = true;
-    framePacer.resume(swapchainGeneration);
-}
-
-void VulkanNcnnRenderer::shutdownFramePacer() {
-    if (!framePacerStarted) {
-        return;
-    }
-
-    framePacer.stop();
-    framePacerStarted = false;
-}
-
-void VulkanNcnnRenderer::initializeTracyGpuContexts() {
-#if defined(ENABLE_TRACY)
-    tracyGraphicsContext =
-        PROFILE_GPU_CONTEXT(physicalDevice, device, graphicsQueue, commandBuffers[0]);
-    PROFILE_GPU_CONTEXT_NAME(tracyGraphicsContext, "Vulkan Graphics");
-
-    tracyComputeContext =
-        PROFILE_GPU_CONTEXT(physicalDevice, device, computeQueue, ncnnInteropCommandBuffer);
-    PROFILE_GPU_CONTEXT_NAME(tracyComputeContext, "NCNN Compute Queue");
-#endif
-}
-
-void VulkanNcnnRenderer::shutdownTracyGpuContexts() {
-#if defined(ENABLE_TRACY)
-    if (tracyComputeContext) {
-        PROFILE_GPU_DESTROY(tracyComputeContext);
-        tracyComputeContext = nullptr;
-    }
-    if (tracyGraphicsContext) {
-        PROFILE_GPU_DESTROY(tracyGraphicsContext);
-        tracyGraphicsContext = nullptr;
-    }
 #endif
 }
 
@@ -281,10 +237,6 @@ void VulkanNcnnRenderer::mainLoop() {
         drawFrame();
     }
 
-    // Stop both pacing threads before waiting for and destroying Vulkan objects.
-    // Pending acquired images belong to the old swapchain and can be discarded
-    // safely once no pacing thread can enter vkQueuePresentKHR.
-    shutdownFramePacer();
     pushNvtxRange("CPU Sync: Shutdown Device WaitIdle");
     {
         PROFILE_ZONE("vkDeviceWaitIdle - Shutdown");
@@ -1364,21 +1316,14 @@ bool VulkanNcnnRenderer::acquireFrame(uint32_t& imageIndex) {
     PROFILE_ZONE("Acquire Swapchain Image");
     const auto acquireStart = std::chrono::steady_clock::now();
     pushNvtxRange(std::string("CPU Sync: acquire swapchain image [frameSlot=") + std::to_string(currentFrame) + "]");
-    VkResult result = VK_SUCCESS;
-    {
-        // VkSwapchainKHR is externally synchronized. The present thread can be
-        // inside vkQueuePresentKHR while the render thread attempts the next
-        // acquire, so both operations use the same narrow critical section.
-        std::lock_guard<std::mutex> swapchainLock(swapchainOperationMutex);
-        result = vkAcquireNextImageKHR(
-            device,
-            swapChain,
-            0,
-            imageAvailableSemaphores[currentFrame],
-            VK_NULL_HANDLE,
-            &imageIndex
-        );
-    }
+    VkResult result = vkAcquireNextImageKHR(
+        device,
+        swapChain,
+        0,
+        imageAvailableSemaphores[currentFrame],
+        VK_NULL_HANDLE,
+        &imageIndex
+    );
     popNvtxRange();
     PROFILE_PLOT("Swapchain Acquire Time (ms)",
         std::chrono::duration<double, std::milli>(
@@ -1551,55 +1496,24 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
 }
 
 void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
-    PROFILE_ZONE("Native/Generated Frame Ready Enqueue");
-    VulkanPresentJob job{};
-    job.swapchain = swapChain;
-    job.waitSemaphore = renderFinishedSemaphores[imageIndex];
-    job.imageIndex = imageIndex;
-    job.swapchainGeneration = swapchainGeneration;
-    job.timelineStep = debugLastPresentedTimelineStep;
-    job.frameKind = pendingPresentedFrameKind;
-    job.label = debugLastPresentedFrameLabel;
-    if (job.frameKind == PresentedFrameKind::Interpolated && job.timelineStep >= 1) {
-        job.previousNativeFrameId =
-            static_cast<uint64_t>((job.timelineStep - 1) / 2);
-        job.currentNativeFrameId = job.previousNativeFrameId + 1;
-    }
-    else if (job.frameKind == PresentedFrameKind::Real && job.timelineStep >= 0) {
-        job.currentNativeFrameId = static_cast<uint64_t>(job.timelineStep / 2);
-    }
-    pendingPresentedFrameKind = PresentedFrameKind::None;
-
-    // Graphics submission is complete from the CPU's perspective. The main
-    // render thread hands the prepared image off without sleeping; the pacing
-    // threads pair generated/native jobs and perform the timed queue present.
-    framePacer.enqueue(std::move(job));
-}
-
-VkResult VulkanNcnnRenderer::presentPreparedFrame(const VulkanPresentJob& job) {
-    PROFILE_ZONE("vkQueuePresentKHR");
-    const auto presentStart = std::chrono::steady_clock::now();
     pushNvtxRange(
-        std::string("CPU Present: paced queue present [swapchain=") + std::to_string(job.imageIndex) +
-        ", logical=" + job.label + "]");
+        std::string("CPU Present: queue present [swapchain=") + std::to_string(imageIndex) +
+        ", logical=" + debugLastPresentedFrameLabel + "]");
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &job.waitSemaphore;
+    presentInfo.pWaitSemaphores = &renderFinishedSemaphores[imageIndex];
 
-    VkSwapchainKHR swapChains[] = { job.swapchain };
+    VkSwapchainKHR swapChains[] = { swapChain };
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &job.imageIndex;
+    presentInfo.pImageIndices = &imageIndex;
 
     VkResult result = VK_SUCCESS;
     {
-        // Keep queue submission serialization and VkSwapchainKHR external
-        // synchronization independent. std::scoped_lock establishes a
-        // deadlock-safe lock order when both are needed for presentation.
-        std::scoped_lock presentLock(vulkanQueueMutex, swapchainOperationMutex);
-        const std::string presentLabel = "Paced Queue Present Logical Frame " + job.label;
+        std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
+        const std::string presentLabel = "Queue Present Logical Frame " + debugLastPresentedFrameLabel;
         beginQueueDebugLabel(presentQueue, presentLabel, glm::vec4(1.0f, 0.8f, 0.2f, 1.0f));
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
         endQueueDebugLabel(presentQueue);
@@ -1609,40 +1523,18 @@ VkResult VulkanNcnnRenderer::presentPreparedFrame(const VulkanPresentJob& job) {
         std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - presentStart).count());
 
-    return result;
-}
-
-bool VulkanNcnnRenderer::processFramePacerCompletions() {
-    PROFILE_ZONE("Present Result Handling");
-    VulkanPresentCompletion completion{};
-    bool recreateRequired = framebufferResized;
-    while (framePacer.tryPopCompletion(completion)) {
-        if (completion.swapchainGeneration != swapchainGeneration) {
-            continue;
-        }
-
-        if (completion.result == VK_SUCCESS || completion.result == VK_SUBOPTIMAL_KHR) {
-            recordPresentedFrameStats(completion.frameKind);
-        }
-
-        if (completion.result == VK_ERROR_OUT_OF_DATE_KHR ||
-            completion.result == VK_SUBOPTIMAL_KHR) {
-            recreateRequired = true;
-        }
-        else if (completion.result != VK_SUCCESS) {
-            throw std::runtime_error(
-                "failed to present swap chain image for logical frame " + completion.label);
-        }
+    if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+        recordPresentedFrameStats(pendingPresentedFrameKind);
     }
+    pendingPresentedFrameKind = PresentedFrameKind::None;
 
-    if (recreateRequired) {
-        PROFILE_ZONE("Present-Triggered Swapchain Recreation");
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
         framebufferResized = false;
         recreateSwapChain();
-        return true;
     }
-
-    return false;
+    else if (result != VK_SUCCESS) {
+        throw std::runtime_error("failed to present swap chain image!");
+    }
 }
 
 void VulkanNcnnRenderer::recordPresentedFrameStats(PresentedFrameKind frameKind) {
@@ -1691,11 +1583,6 @@ void VulkanNcnnRenderer::drawFrame() {
     useChronologicalInterpolation =
         ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer;
 #endif
-
-    framePacer.setInterpolationEnabled(useChronologicalInterpolation);
-    if (processFramePacerCompletions()) {
-        return;
-    }
 
     const auto schedulerNow = std::chrono::steady_clock::now();
     const auto realFrameInterval = secondsPerFrame(30.0);

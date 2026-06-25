@@ -16,7 +16,6 @@
 #include <glm/gtc/constants.hpp>
 
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <future>
@@ -420,10 +419,6 @@ private:
                                       PresentationCommandMode mode);
 
     void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot);
-
-    void waitForNativeFramesOnNcnnQueue(uint64_t timelineValue);
-
-    void signalInterpolationOnNcnnQueue(uint64_t timelineValue);
 
     void handlePresentation(uint32_t imageIndex);
 

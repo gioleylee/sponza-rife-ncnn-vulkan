@@ -1,28 +1,18 @@
 // Owns generic Vulkan buffer, image, memory, and one-shot command helpers.
 #include "VulkanNcnnRenderer.h"
-#include "CpuProfiler.h"
 
 #include <vulkan/vulkan.h>
 
 #include <mutex>
 #include <stdexcept>
-#include <vector>
 
 void VulkanNcnnRenderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                   VkBuffer& buffer, VkDeviceMemory& bufferMemory,
-                   const std::vector<uint32_t>& queueFamilyIndices) {
+                   VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
     bufferInfo.usage = usage;
-    if (queueFamilyIndices.size() > 1) {
-        bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        bufferInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size());
-        bufferInfo.pQueueFamilyIndices = queueFamilyIndices.data();
-    }
-    else {
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to create buffer!");
@@ -74,11 +64,7 @@ void VulkanNcnnRenderer::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDe
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
         pushNvtxRange("CPU Sync: One-Shot Copy Buffer Queue WaitIdle");
-        {
-            PROFILE_ZONE("vkQueueWaitIdle - One Shot Copy");
-            // Initialization/upload helper; not part of steady-state pacing.
-            vkQueueWaitIdle(graphicsQueue);
-        }
+        vkQueueWaitIdle(graphicsQueue);
         popNvtxRange();
     }
 
@@ -112,8 +98,7 @@ void VulkanNcnnRenderer::createImage(uint32_t width, uint32_t height, uint32_t m
     VkImageTiling tiling, VkImageUsageFlags usage,
     VkMemoryPropertyFlags properties,
     VkImage& image, VkDeviceMemory& imageMemory,
-    VkImageCreateFlags flags,
-    const std::vector<uint32_t>& queueFamilyIndices) {
+    VkImageCreateFlags flags) {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.flags = flags;
@@ -128,14 +113,7 @@ void VulkanNcnnRenderer::createImage(uint32_t width, uint32_t height, uint32_t m
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = usage;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    if (queueFamilyIndices.size() > 1) {
-        imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        imageInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size());
-        imageInfo.pQueueFamilyIndices = queueFamilyIndices.data();
-    }
-    else {
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
         throw std::runtime_error("failed to create image!");
@@ -187,11 +165,7 @@ void VulkanNcnnRenderer::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
         vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
         pushNvtxRange("CPU Sync: One-Shot Command Queue WaitIdle");
-        {
-            PROFILE_ZONE("vkQueueWaitIdle - Layout Transition");
-            // Initialization/recreation helper; not part of steady-state pacing.
-            vkQueueWaitIdle(graphicsQueue);
-        }
+        vkQueueWaitIdle(graphicsQueue);
         popNvtxRange();
     }
 

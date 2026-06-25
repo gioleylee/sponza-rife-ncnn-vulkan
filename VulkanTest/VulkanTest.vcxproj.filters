@@ -88,9 +88,6 @@
     <Filter Include="Third Party\NVTX">
       <UniqueIdentifier>{05BA22DF-F9C8-41C7-87E4-FB7A2887545F}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Third Party\Tracy">
-      <UniqueIdentifier>{9BDAF80A-F30D-45F4-A0B6-F6D9A0861FA8}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Third Party\Single Header Libraries">
       <UniqueIdentifier>{0E0E3953-C578-48EB-89B9-48B3C9C1E4D8}</UniqueIdentifier>
     </Filter>
@@ -144,9 +141,6 @@
     <ClCompile Include="third_party\imgui_impl_vulkan.cpp">
       <Filter>Third Party\ImGui\Backends</Filter>
     </ClCompile>
-    <ClCompile Include="third_party\tracy\public\TracyClient.cpp">
-      <Filter>Third Party\Tracy</Filter>
-    </ClCompile>
     <ClCompile Include="C:\projects\libraries\include\imgui\imgui_impl_glfw.cpp">
       <Filter>Third Party\ImGui\Backends</Filter>
     </ClCompile>
@@ -171,9 +165,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\app\AppTypes.h">
-      <Filter>Header Files\App\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="include\app\CpuProfiler.h">
       <Filter>Header Files\App\Core</Filter>
     </ClInclude>
     <ClInclude Include="include\app\VulkanNcnnRenderer.h">
@@ -230,9 +221,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="ncnn_setup.md">
-      <Filter>Documentation</Filter>
-    </None>
-    <None Include="tracy_setup.md">
       <Filter>Documentation</Filter>
     </None>
     <None Include="third_party\nvtx\LICENSE.txt">

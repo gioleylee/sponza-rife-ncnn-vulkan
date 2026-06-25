@@ -29,7 +29,7 @@ inline constexpr uint32_t OFFSCREEN_FRAME_HISTORY_COUNT = 6;
 inline constexpr uint32_t NCNN_OUTPUT_BUFFER_COUNT = 3;
 // Keep the async queue shallow until the NCNN/RIFE wrapper is proven safe at
 // higher concurrency.
-inline constexpr uint32_t MAX_NCNN_IN_FLIGHT = 1;
+inline constexpr uint32_t MAX_NCNN_IN_FLIGHT = 2;
 
 inline const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -38,8 +38,6 @@ inline const std::vector<const char*> deviceExtensions = {
     VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME
 #endif
 };
-
-using FamilyIndex = uint32_t;
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -178,10 +176,7 @@ struct OffscreenFrame {
     VkBuffer gpuBuffer = VK_NULL_HANDLE;
     VkDeviceMemory gpuMemory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
-    uint64_t nativeReadyTimelineValue = 0;
     uint64_t debugFrameId = UINT64_MAX;
-    bool inUseByGraphics = false;
-    uint32_t graphicsFrameSlot = UINT32_MAX;
     bool debugPresented = false;
 };
 
@@ -194,7 +189,6 @@ struct NcnnOutputBuffer {
     bool inUseByGraphics = false;
     uint32_t graphicsFrameSlot = UINT32_MAX;
     uint64_t sequence = 0;
-    uint64_t interpolationReadyTimelineValue = 0;
     uint64_t debugPreviousFrameId = UINT64_MAX;
     uint64_t debugCurrentFrameId = UINT64_MAX;
 };
@@ -214,7 +208,6 @@ struct AsyncNcnnResult {
     uint64_t previousFrameId = UINT64_MAX;
     uint64_t currentFrameId = UINT64_MAX;
     uint32_t interpolationTargetIndex = UINT32_MAX;
-    uint64_t interpolationTimelineValue = 0;
 };
 
 enum class InterpolationTargetState {

@@ -56,6 +56,7 @@ void VulkanNcnnRenderer::createSwapChain() {
     if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
         throw std::runtime_error("failed to create swap chain!");
     }
+    ++swapchainGeneration;
 
     vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
     swapChainImages.resize(imageCount);
@@ -72,6 +73,8 @@ void VulkanNcnnRenderer::recreateSwapChain() {
         glfwGetFramebufferSize(window, &width, &height);
         glfwWaitEvents();
     }
+
+    framePacer.pause();
 
     pushNvtxRange("CPU Sync: Swapchain Recreation Device WaitIdle");
     vkDeviceWaitIdle(device);
@@ -104,6 +107,7 @@ void VulkanNcnnRenderer::recreateSwapChain() {
     createFramebuffers();
     createLightingDescriptorPool();
     createLightingDescriptorSets();
+    framePacer.resume(swapchainGeneration);
 }
 
 void VulkanNcnnRenderer::cleanupSwapChain() {

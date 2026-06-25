@@ -62,6 +62,7 @@
 #include "NcnnFrameInterpolator.h"
 
 #include "AppTypes.h"
+#include "VulkanFramePacer.h"
 #include "validation_layers.h"
 
 class VulkanNcnnRenderer {
@@ -186,6 +187,8 @@ private:
     std::chrono::steady_clock::time_point benchmarkNextPresentTime{};
     std::chrono::steady_clock::time_point benchmarkNextRealFrameTime{};
     std::chrono::steady_clock::time_point fpsStatsWindowStart{};
+    VulkanFramePacer framePacer;
+    uint64_t swapchainGeneration = 0;
     PresentedFrameKind pendingPresentedFrameKind = PresentedFrameKind::None;
     uint32_t fpsPresentedFrameCount = 0;
     uint32_t fpsRealFrameCount = 0;
@@ -421,6 +424,10 @@ private:
     void submitGraphicsWork(uint32_t frameSlot, uint32_t imageIndex, uint32_t capturedNcnnSlot);
 
     void handlePresentation(uint32_t imageIndex);
+
+    VkResult presentQueuedFrame(const VulkanPresentJob& job);
+
+    void processFramePacerCompletions();
 
     void recordPresentedFrameStats(PresentedFrameKind frameKind);
 

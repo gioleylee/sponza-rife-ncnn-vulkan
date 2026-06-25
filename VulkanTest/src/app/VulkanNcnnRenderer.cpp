@@ -205,6 +205,10 @@ void VulkanNcnnRenderer::initializeDescriptorResources() {
 void VulkanNcnnRenderer::initializeSyncResources() {
     createCommandBuffers();
     createSyncObjects();
+    framePacer.start([this](const VulkanPresentJob& job) {
+        return presentQueuedFrame(job);
+    });
+    framePacer.resume(swapchainGeneration);
 }
 
 void VulkanNcnnRenderer::initializeOptionalNcnn() {
@@ -234,12 +238,15 @@ void VulkanNcnnRenderer::mainLoop() {
         drawFrame();
     }
 
+    framePacer.stop();
+
     pushNvtxRange("CPU Sync: Shutdown Device WaitIdle");
     vkDeviceWaitIdle(device);
     popNvtxRange();
 }
 
 void VulkanNcnnRenderer::cleanup() {
+    framePacer.stop();
 #if HAS_NCNN
     waitForAsyncNcnnInference();
     shutdownNcnn();
@@ -1370,40 +1377,68 @@ void VulkanNcnnRenderer::submitGraphicsWork(uint32_t frameSlot, uint32_t imageIn
 
 void VulkanNcnnRenderer::handlePresentation(uint32_t imageIndex) {
     pushNvtxRange(
-        std::string("CPU Present: queue present [swapchain=") + std::to_string(imageIndex) +
+        std::string("CPU Present: enqueue pacer job [swapchain=") + std::to_string(imageIndex) +
         ", logical=" + debugLastPresentedFrameLabel + "]");
+    VulkanPresentJob job{};
+    job.swapchain = swapChain;
+    job.waitSemaphore = renderFinishedSemaphores[imageIndex];
+    job.imageIndex = imageIndex;
+    job.swapchainGeneration = swapchainGeneration;
+    job.timelineStep = debugLastPresentedTimelineStep;
+    job.frameKind = pendingPresentedFrameKind;
+    job.label = debugLastPresentedFrameLabel;
+    framePacer.enqueue(std::move(job));
+    pendingPresentedFrameKind = PresentedFrameKind::None;
+    popNvtxRange();
+}
+
+VkResult VulkanNcnnRenderer::presentQueuedFrame(const VulkanPresentJob& job) {
+    pushNvtxRange(
+        std::string("CPU Present Thread: queue present [swapchain=") + std::to_string(job.imageIndex) +
+        ", logical=" + job.label + "]");
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &renderFinishedSemaphores[imageIndex];
+    presentInfo.pWaitSemaphores = &job.waitSemaphore;
 
-    VkSwapchainKHR swapChains[] = { swapChain };
+    VkSwapchainKHR swapChains[] = { job.swapchain };
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pImageIndices = &job.imageIndex;
 
     VkResult result = VK_SUCCESS;
     {
         std::lock_guard<std::mutex> queueLock(vulkanQueueMutex);
-        const std::string presentLabel = "Queue Present Logical Frame " + debugLastPresentedFrameLabel;
+        const std::string presentLabel = "Queue Present Logical Frame " + job.label;
         beginQueueDebugLabel(presentQueue, presentLabel, glm::vec4(1.0f, 0.8f, 0.2f, 1.0f));
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
         endQueueDebugLabel(presentQueue);
     }
     popNvtxRange();
+    return result;
+}
 
-    if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
-        recordPresentedFrameStats(pendingPresentedFrameKind);
-    }
-    pendingPresentedFrameKind = PresentedFrameKind::None;
+void VulkanNcnnRenderer::processFramePacerCompletions() {
+    VulkanPresentCompletion completion{};
+    while (framePacer.tryPopCompletion(completion)) {
+        if (completion.swapchainGeneration != swapchainGeneration) {
+            continue;
+        }
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
-        framebufferResized = false;
-        recreateSwapChain();
-    }
-    else if (result != VK_SUCCESS) {
-        throw std::runtime_error("failed to present swap chain image!");
+        if (completion.result == VK_SUCCESS || completion.result == VK_SUBOPTIMAL_KHR) {
+            recordPresentedFrameStats(completion.frameKind);
+        }
+
+        if (completion.result == VK_ERROR_OUT_OF_DATE_KHR ||
+            completion.result == VK_SUBOPTIMAL_KHR ||
+            framebufferResized) {
+            framebufferResized = false;
+            recreateSwapChain();
+        }
+        else if (completion.result != VK_SUCCESS) {
+            throw std::runtime_error("failed to present swap chain image!");
+        }
     }
 }
 
@@ -1444,11 +1479,20 @@ void VulkanNcnnRenderer::advanceFrameIndex() {
 }
 
 void VulkanNcnnRenderer::drawFrame() {
+    processFramePacerCompletions();
+
+    if (framebufferResized) {
+        framebufferResized = false;
+        recreateSwapChain();
+        return;
+    }
+
     bool useChronologicalInterpolation = false;
 #if HAS_NCNN
     useChronologicalInterpolation =
         ncnnPresentationState.ncnnRealtimeInterpolationEnabled && ncnnModelAttachedToRenderer;
 #endif
+    framePacer.setInterpolationEnabled(useChronologicalInterpolation);
 
     const auto schedulerNow = std::chrono::steady_clock::now();
     const auto realFrameInterval = secondsPerFrame(30.0);

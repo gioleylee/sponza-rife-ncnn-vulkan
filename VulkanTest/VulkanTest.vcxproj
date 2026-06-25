@@ -159,6 +159,7 @@
     <ClCompile Include="src\app\TextureLoader.cpp" />
     <ClCompile Include="src\app\VulkanBuffers.cpp" />
     <ClCompile Include="src\app\VulkanDevice.cpp" />
+    <ClCompile Include="src\app\VulkanFramePacer.cpp" />
     <ClCompile Include="src\app\VulkanHelpers.cpp" />
     <ClCompile Include="src\app\VulkanNcnnRenderer.cpp" />
     <ClCompile Include="src\platform\WindowInput.cpp" />
@@ -198,6 +199,7 @@
     <ClInclude Include="include\app\Swapchain.h" />
     <ClInclude Include="include\app\TextureLoader.h" />
     <ClInclude Include="include\app\VulkanHelpers.h" />
+    <ClInclude Include="include\app\VulkanFramePacer.h" />
     <ClInclude Include="include\app\VulkanNcnnRenderer.h" />
     <ClInclude Include="include\app\NcnnFrameInterpolator.h" />
     <ClInclude Include="include\platform\WindowInput.h" />
